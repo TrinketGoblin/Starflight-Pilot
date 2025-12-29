@@ -1,52 +1,56 @@
 {
-  "content": "🛰️ **NAVIGATING THE GALAXY: YOUR SERVER MAP**",
+  "content": "",
   "embeds": [
     {
-      "color": 16642467,
+      "color": 2635882,
+      "description": "🛰️ **NEW COORDINATES DETECTED: THE MOONBASE IS ONLINE**",
       "image": {
         "url": "https://64.media.tumblr.com/fb4527b4d5ba87d89b66a9c7ce471836/01cb3d1ba106fa8c-2e/s1280x1920/e393f5a5a2d9275d944befbe0c0a14f051176874.pnj"
       }
     },
     {
-      "title": "🌜 MISSION CONTROL",
-      "description": "The essential hubs for your flight. Check here first!\n\n• **#💫┊protocol-manual**: Official Rules of the ship.\n• **#💫┊server-announcements**: Official announcements and updates.\n• **#💫┊server-map**: A visual guide to the ship.\n• **#💫┊roles-shuttle-id**: Get roles.\n• **#💫┊system-pings**: Discord pings.\n• **#💫┊galactic-ideas**: Make suggestions.",
-      "color": 16444036
-    },
-    {
-      "title": "⭐ THE STARFIELD",
-      "description": "The main social sector of the ship. Stay active and stay cozy!\n\n• **#💫┊general-comms-chatter**: Open channel for all crew.\n• **#💫┊stardust-media**: Art and media.\n• **#💫┊vent-vortex**: Find support.\n• **#💫┊bump-the-ship**: Help more people find us.\n• **#💫┊counting-the-stars**: New highscore?\n• **#💫┊cozy-cockpit-vc**: Voice hangouts.",
-      "color": 16179815
-    },
-    {
-      "title": "🛰️ THE MOONBASE",
-      "description": "The operations and crew-specific quarters of the ship.\n\n• **#💫┊moon-guardians-chat**: CG chat.\n• **#💫┊little-astronauts-lounge**: Little chat.\n• **#💫┊nebula-beast-den**: Pet regressor chat.\n• **#💫┊flip-sidehangout**: Flip chat.\n• **#💫┊lunar-lounge**: Public lounge 2.\n• **#💫┊guardian-resources**: Resources and tips.\n• **#💫┊public-bot-commands**: Public bot commands.",
-      "color": 15849803
-    },
-    {
-      "title": "🚀 MOON STATION",
-      "description": "Our dedicated soft-space for little ones and caregivers.\n\n• **#💫┊star-exhibit**: Show off stuffies and gear and stuff you make.\n• **#💫┊bedtime-stories**: Story time.\n• **#💫┊staff-signals**: Ship assistance signals.\n• **#💫┊playroom**: A space for coloring, interactive games, and imaginative play.\n• **#💫┊ship-library**: SFW fanfic spot.\n• **#💫┊space-snacktime**: Food chat.\n• **#💫┊sleepover-vc**: Sleep on call.",
-      "color": 15453999
-    },
-    {
-      "title": "🌿 THE GREENHOUSE (RP/Tupperbox APPROVED)",
-      "description": "Our botanical bay for growth and sensory exploration.\n\n• **#💫┊sprout-garden**: Playful gardening and planting.\n• **#💫┊solar-panels**: A bright space for quiet relaxation.\n• **#💫┊oxygen-scrubbers**: Sensory water and rain vibes.\n• **#💫┊artificial-growers**: Cosmic snacks and healthy treats.",
-      "color": 14663962
-    },
-    {
-      "title": "🌑 THE EVENT HORIZON",
-      "description": "Technical logs and restricted administration sectors.\n\n• **#💫┊surveillance-logs**: Records of ship activities.\n• **#💫┊astronomer-comms**: Astronomer discussions.\n• **#💫┊ranger-briefings**: Ranger updates.\n• **#💫┊bot-commands**: Bot automation channel.\n• **#💫┊the-void-registry**: Ship access records.",
-      "color": 12493850
-    },
-    {
-      "title": "🛰️ SHIP ADVICE",
-      "description": "If you're ever lost or feeling adrift, don't hesitate to DM a 🛡️ **Space Ranger** or a 🌟 **Grand Astronomer**. We're here to make sure your journey is nothing but stardust and sweet dreams!",
-      "color": 10323993
-    },
-    {
-      "color": 8285463,
-      "image": {
-        "url": "https://64.media.tumblr.com/b1087d6d3803689dd69ed77055e45141/01cb3d1ba106fa8c-7a/s1280x1920/b8342d92c350abeee78d7c8b0636625679dfc8ae.pnj"
+    "title": "🚀 Starflight Pilot Bot Command Guide",
+    "description": "Complete guide to all available commands for the Starflight Pilot Discord bot",
+    "color": 5814783,
+    "fields": [
+      {
+        "name": "🔧 Admin/Staff Commands",
+        "value": "**/list_roles** - Lists all server roles with mention codes\n**/post_embed** - Posts embed from JSON file to channel\n**/backup_ship** - Creates server backup\n**/sync_ship** - Restores server from backup\n**/embed_create** - Create new embed template\n**/embed_edit** - Edit existing embed\n**/embed_post** - Post saved embed\n**/embed_list** - List all saved embeds\n**/embed_delete** - Delete embed template\n\n*Requires Staff Role or Admin Permissions*",
+        "inline": false
+      },
+      {
+        "name": "👤 User Commands",
+        "value": "**/intro** - Introduce yourself to the community\n**/plushie_scan** - Register a plushie with optional photo\n**/plushie_summon** - View plushie collection\n**/plushie_info** - View detailed plushie profile\n**/plushie_release** - Remove plushie from collection",
+        "inline": false
+      },
+      {
+        "name": "🎮 Fun Commands",
+        "value": "**/mission_report** - Get a fun mission assignment\n**/fuel_refill** - Send encouragement to crew members",
+        "inline": false
+      },
+      {
+        "name": "⚙️ Prefix Commands",
+        "value": "**!sync_tree** - Sync slash commands to Discord (Admin only)",
+        "inline": false
+      },
+      {
+        "name": "📝 Usage Examples",
+        "value": "• `/intro channel:#introductions`\n• `/plushie_scan photo:` (attach image)\n• `/plushie_info name:\"Fluffy\" user:@Username`\n• `/fuel_refill member:@Username message:\"You're doing great!\"`\n• `/embed_post name:\"welcome\" channel:#general`",
+        "inline": false
+      },
+      {
+        "name": "📁 File Structure",
+        "value": "• Embeds saved in `/saved_embeds/`\n• Backups as `ship_backup.json`\n• Plushie data in PostgreSQL database",
+        "inline": false
+      },
+      {
+        "color": 16775108,
+        "description": "🌕 **pls invite ppl to join our discord server and help us grow!**\n\n[Click here](https://discord.gg/4QzQYeuApB) to join!",
+        "image": {
+          "url": "https://64.media.tumblr.com/b1087d6d3803689dd69ed77055e45141/01cb3d1ba106fa8c-7a/s1280x1920/b8342d92c350abeee78d7c8b0636625679dfc8ae.pnj"
+        }
       }
+      ]
     }
   ],
   "attachments": []
