@@ -68,11 +68,16 @@ class PlushieManager:
                     personality TEXT,
                     description TEXT,
                     registered_date TEXT,
-                    image BYTEA,
-                    UNIQUE(user_id, LOWER(name))
+                    image BYTEA
                 )
                 """)
+                # Create a unique index on user_id + lower(name)
+                cur.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS plushie_unique_name_per_user
+                ON plushies (user_id, LOWER(name));
+                """)
                 conn.commit()
+
 
     @staticmethod
     def add(user_id: int, data: Dict, image: Optional[bytes]) -> bool:
