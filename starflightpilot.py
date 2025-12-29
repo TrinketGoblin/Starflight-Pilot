@@ -963,26 +963,109 @@ async def intro(interaction: discord.Interaction, channel: Optional[discord.Text
 @bot.tree.command(name="plushie_scan", description="Register a plushie with a photo!")
 @app_commands.describe(photo="Upload a photo of your plushie (will be resized to 800x800)")
 async def plushie_scan(interaction: discord.Interaction, photo: Optional[discord.Attachment] = None):
-    await interaction.response.defer(ephemeral=True, thinking=True) # Defer response for file reading/compression
+    """Register a plushie, optionally with a photo"""
+    
+    # Store attachment URL temporarily if provided
+    attachment_url = photo.url if photo else None
+    
+    # Validate image type if provided
+    if photo and (not photo.content_type or not photo.content_type.startswith("image/")):
+        return await interaction.response.send_message(
+            "❌ Please upload a valid image file.", 
+            ephemeral=True
+        )
+    
+    # Show modal immediately (required - cannot defer before sending modal)
+    modal = PlushieScanModal(attachment_url=attachment_url)
+    await interaction.response.send_modal(modal)
 
-    image_bytes = None
-    if photo:
-        if not photo.content_type or not photo.content_type.startswith("image/"):
-            return await interaction.followup.send("❌ Please upload a valid image file.", ephemeral=True)
+
+class PlushieScanModal(discord.ui.Modal, title='Register a New Plushie'):
+    """Modal for collecting plushie registration data."""
+    
+    def __init__(self, attachment_url: Optional[str] = None):
+        super().__init__()
+        self.attachment_url = attachment_url  # Store URL to download later
+
+    p_name = discord.ui.TextInput(
+        label='Plushie Name',
+        placeholder='e.g., Captain Fluffybutt',
+        max_length=50
+    )
+
+    p_species = discord.ui.TextInput(
+        label='Species/Type',
+        placeholder='e.g., Space Bear, Cuddly Octopus',
+        max_length=50
+    )
+
+    p_color = discord.ui.TextInput(
+        label='Primary Color',
+        placeholder='e.g., Nebula Blue, Crimson',
+        max_length=30,
+        required=False
+    )
+    
+    p_personality = discord.ui.TextInput(
+        label='Personality',
+        style=discord.TextStyle.paragraph,
+        placeholder='e.g., Brave, slightly clumsy, loves long naps.',
+        max_length=500
+    )
+    
+    p_description = discord.ui.TextInput(
+        label='Description/Origin Story',
+        style=discord.TextStyle.paragraph,
+        placeholder='e.g., Found floating near a dwarf planet.',
+        max_length=1000
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # Defer the modal submission response
+        await interaction.response.defer(ephemeral=True)
         
-        try:
-            # 1. Read raw bytes from Discord
-            raw_data = await photo.read()
-            # 2. Process and compress the image
-            image_bytes = ImageProcessor.compress_image(raw_data)
-        except Exception as e:
-            logger.error(f"Error during file read/compression: {e}")
-            return await interaction.followup.send("❌ Failed to read or process the image file.", ephemeral=True)
-
-    # Pass the compressed bytes to the modal
-    modal = PlushieScanModal(image_bytes=image_bytes)
-    # The modal response must use the original deferred interaction
-    await interaction.followup.send_modal(modal)
+        p_data = {
+            "name": str(self.p_name),
+            "species": str(self.p_species),
+            "color": str(self.p_color) or "N/A",
+            "personality": str(self.p_personality),
+            "description": str(self.p_description),
+            "registered_date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        }
+        
+        # Process image if URL was provided
+        image_bytes = None
+        if self.attachment_url:
+            try:
+                import aiohttp
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(self.attachment_url) as resp:
+                        if resp.status == 200:
+                            raw_data = await resp.read()
+                            image_bytes = ImageProcessor.compress_image(raw_data)
+                        else:
+                            logger.error(f"Failed to download image: HTTP {resp.status}")
+            except Exception as e:
+                logger.error(f"Error downloading/processing image: {e}")
+                return await interaction.followup.send(
+                    "❌ Failed to process the image. Please try again.",
+                    ephemeral=True
+                )
+        
+        # Save to database
+        success = PlushieManager.add_plushie(interaction.user.id, p_data, image_bytes)
+        
+        if success:
+            await interaction.followup.send(
+                f"✅ **{p_data['name']}** registered to the Starflight Crew Roster! 🚀" + 
+                (" Image compressed and stored." if image_bytes else ""),
+                ephemeral=True
+            )
+        else:
+            await interaction.followup.send(
+                f"❌ Failed to register **{p_data['name']}**. A plushie with that name might already exist in your collection.",
+                ephemeral=True
+            )
 
 
 @bot.tree.command(name="plushie_summon", description="View a plushie collection!")
