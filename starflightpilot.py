@@ -9,6 +9,7 @@ import random
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import io
+import re
 import psycopg2
 from PIL import Image
 
