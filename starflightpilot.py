@@ -134,7 +134,7 @@ class PlushieManager:
                 conn.close()
 
     @staticmethod
-    def get_plushie_full(user_id: int, name: str):
+    def get_plushie(interaction.user.id, plushie_name)
         """Retrieves full details including image blob"""
         if not DATABASE_URL: return None
 
@@ -821,7 +821,7 @@ class PlushieScanModal(discord.ui.Modal, title='Register a New Plushie'):
         if success:
             await interaction.response.send_message(
                 f"✅ **{p_data['name']}** registered to the Starflight Crew Roster! Image compressed and stored. 🚀",
-                ephemeral=True
+                ephemeral=False
             )
         else:
             await interaction.response.send_message(
@@ -1106,6 +1106,35 @@ async def plushie_summon(interaction: discord.Interaction, user: Optional[discor
     embed.set_thumbnail(url=target_user.display_avatar.url)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@bot.tree.command(
+    name="plushie_view",
+    description="View details about a plushie"
+)
+async def plushie_view(
+    interaction: discord.Interaction,
+    owner: discord.User,
+    plushie_name: str
+):
+    plushie = DatabaseManager.get_plushie(
+        owner.id,          # ✅ IMPORTANT
+        plushie_name
+    )
+
+    if not plushie:
+        return await interaction.response.send_message(
+            f"❌ {owner.display_name} does not have a plushie named **{plushie_name}**."
+        )
+
+    embed = discord.Embed(
+        title=f"🧸 {plushie['name']}",
+        description=f"Owned by {owner.mention}",
+        color=discord.Color.pink()
+    )
+
+    embed.add_field(name="Rarity", value=plushie["rarity"], inline=True)
+    embed.add_field(name="Series", value=plushie.get("series", "Unknown"), inline=True)
+
+    await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="plushie_info", description="View a plushie's full profile, including photo")
 @app_commands.describe(name="Name of the plushie", user="User who owns the plushie")
