@@ -6,7 +6,7 @@ import os
 from typing import Optional, Dict, List
 import logging
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -17,6 +17,7 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 BACKUP_FILE = 'ship_backup.json'
 PLUSHIES_FILE = 'plushies.json'
 MISSIONS_FILE = 'missions.json'
+ENCOURAGEMENTS_FILE = 'encouragements.json'
 STAFF_ROLE_ID = 1454538884682612940
 
 # Setup logging
@@ -163,6 +164,61 @@ class MissionGenerator:
         """Get a random mission"""
         missions = MissionGenerator.load_missions()
         return random.choice(missions)
+
+
+class EncouragementGenerator:
+    """Generates encouraging messages for fuel refills"""
+    
+    DEFAULT_ENCOURAGEMENTS = [
+        "is sending you rocket fuel! 🚀✨",
+        "is refueling your tank with cosmic energy! ⭐💫",
+        "thinks you're doing stellar! 🌟🌙",
+        "is beaming positive vibes your way! 🛸💖",
+        "says you're out of this world! 🌍🪐",
+        "is sending you galaxy-sized hugs! 🌌🤗",
+        "believes you can reach the stars! ✨🌠",
+        "is your co-pilot cheering you on! 🛰️💪",
+        "sent you a care package from Mission Control! 📦💝",
+        "thinks you shine brighter than a supernova! 💫⭐"
+    ]
+    
+    @staticmethod
+    def load_encouragements() -> List[str]:
+        """Load encouragements from file, or return defaults if file doesn't exist"""
+        if not os.path.exists(ENCOURAGEMENTS_FILE):
+            # Create the file with default encouragements
+            EncouragementGenerator.save_encouragements(EncouragementGenerator.DEFAULT_ENCOURAGEMENTS)
+            return EncouragementGenerator.DEFAULT_ENCOURAGEMENTS
+        
+        try:
+            with open(ENCOURAGEMENTS_FILE, 'r', encoding='utf-8') as f:
+                encouragements = json.load(f)
+                # Validate that it's a list
+                if isinstance(encouragements, list) and encouragements:
+                    return encouragements
+                else:
+                    logger.warning("Invalid encouragements.json format, using defaults")
+                    return EncouragementGenerator.DEFAULT_ENCOURAGEMENTS
+        except Exception as e:
+            logger.error(f"Failed to load encouragements: {e}, using defaults")
+            return EncouragementGenerator.DEFAULT_ENCOURAGEMENTS
+    
+    @staticmethod
+    def save_encouragements(encouragements: List[str]) -> bool:
+        """Save encouragements to file"""
+        try:
+            with open(ENCOURAGEMENTS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(encouragements, f, indent=4)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save encouragements: {e}")
+            return False
+    
+    @staticmethod
+    def get_encouragement() -> str:
+        """Get a random encouragement"""
+        encouragements = EncouragementGenerator.load_encouragements()
+        return random.choice(encouragements)
 
 
 # --- UTILITIES ---
@@ -604,7 +660,7 @@ class IntroModal(discord.ui.Modal, title="✨ Introduce Yourself to the Crew!"):
         embed = discord.Embed(
             title=f"🚀 Welcome Aboard, {interaction.user.display_name}!",
             color=discord.Color.blue(),
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
         
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -676,7 +732,7 @@ class PlushieScanModal(discord.ui.Modal, title="🧸 Register Your Plushie!"):
             "color": self.color.value if self.color.value else "Unknown",
             "description": self.description.value,
             "personality": self.personality.value if self.personality.value else "Mysterious",
-            "registered_date": datetime.utcnow().strftime("%Y-%m-%d")
+            "registered_date": datetime.now(timezone.utc).strftime("%Y-%m-%d")
         }
         
         if PlushieManager.add_plushie(interaction.user.id, plushie_data):
@@ -765,7 +821,7 @@ async def plushie_info(interaction: discord.Interaction, name: str):
         title=f"🧸 {plushie['name']}'s Profile",
         description=plushie['description'],
         color=discord.Color.purple(),
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
     
     embed.add_field(name="🐾 Species", value=plushie['species'], inline=True)
@@ -812,7 +868,7 @@ async def mission_report(interaction: discord.Interaction):
         title="🚀 Mission Assignment",
         description=f"**Mission Briefing for {interaction.user.display_name}:**\n\n{mission}",
         color=discord.Color.gold(),
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
     
     embed.set_thumbnail(url="https://em-content.zobj.net/source/twitter/348/rocket_1f680.png")
@@ -826,27 +882,13 @@ async def mission_report(interaction: discord.Interaction):
 async def fuel_refill(interaction: discord.Interaction, member: discord.Member, message: Optional[str] = None):
     """Send encouraging messages to other members"""
     
-    # Fun encouraging messages with space emojis
-    encouragements = [
-        "is sending you rocket fuel! 🚀✨",
-        "is refueling your tank with cosmic energy! ⭐💫",
-        "thinks you're doing stellar! 🌟🌙",
-        "is beaming positive vibes your way! 🛸💖",
-        "says you're out of this world! 🌍🪐",
-        "is sending you galaxy-sized hugs! 🌌🤗",
-        "believes you can reach the stars! ✨🌠",
-        "is your co-pilot cheering you on! 🛰️💪",
-        "sent you a care package from Mission Control! 📦💝",
-        "thinks you shine brighter than a supernova! 💫⭐"
-    ]
-    
-    encouragement = random.choice(encouragements)
+    encouragement = EncouragementGenerator.get_encouragement()
     
     embed = discord.Embed(
         title="⛽ Fuel Refill Station",
         description=f"**{interaction.user.display_name}** {encouragement}",
         color=discord.Color.green(),
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
     
     if message:

@@ -1,0 +1,42 @@
+{
+  "content": "🚀 **Starflight Pilot: System Manifest** 🛰️",
+  "embeds": [
+    {
+      "image": {
+        "url": "https://64.media.tumblr.com/fb4527b4d5ba87d89b66a9c7ce471836/01cb3d1ba106fa8c-2e/s1280x1920/e393f5a5a2d9275d944befbe0c0a14f051176874.pnj"
+      },
+      "color": 5532666
+    },
+    {
+      "title": "🛸 Mission Control & Crew Operations",
+      "description": "Welcome to the Starflight Pilot interface! Below are the protocols for managing the ship and supporting our Little Astronauts.",
+      "color": 5532666,
+      "fields": [
+        {
+          "name": "🛠️ Admin & Security",
+          "value": "• `/backup_ship`: Saves current server roles and channels.\n• `/sync_ship`: Restores the ship and removes extra items not in backup.\n• `/list_roles`: Generates role mention codes for JSON templates.",
+          "inline": false
+        },
+        {
+          "name": "🧸 Plushie Collection",
+          "value": "• `/plushie_scan`: Register a new plushie with name and personality.\n• `/plushie_summon`: View your entire registered collection.\n• `/plushie_info`: See detailed stats for a specific plushie.\n• `/plushie_release`: Remove a plushie from your collection.",
+          "inline": false
+        },
+        {
+          "name": "🌟 Daily Missions & Support",
+          "value": "• `/intro`: Introduce yourself to the crew via a modal form.\n• `/mission_report`: Receive a random fun space mission.\n• `/fuel_refill`: Send encouraging 'fuel' and messages to a crewmate.",
+          "inline": false
+        }
+      ]
+    },
+    {
+      "image": {
+        "url": "https://64.media.tumblr.com/b1087d6d3803689dd69ed77055e45141/01cb3d1ba106fa8c-7a/s1280x1920/b8342d92c350abeee78d7c8b0636625679dfc8ae.pnj"
+      },
+      "color": 5532666,
+      "footer": {
+        "text": "Starflight Pilot • Safely guiding the crew through the stars."
+      }
+    }
+  ]
+}
