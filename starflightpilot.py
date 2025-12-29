@@ -623,28 +623,35 @@ class IntroModal(discord.ui.Modal, title="✨ Introduce Yourself to the Crew!"):
     
     age = discord.ui.TextInput(
         label="Age/Age Range",
-        placeholder="e.g., 5, 8, 3-5, etc.",
+        placeholder="Your age or age range",
         required=True,
         max_length=50
     )
     
     pronouns = discord.ui.TextInput(
         label="Pronouns",
-        placeholder="e.g., he/him, she/her, they/them",
+        placeholder="Your pronouns",
         required=True,
         max_length=100
     )
     
-    likes = discord.ui.TextInput(
-        label="Things You Like",
-        placeholder="e.g., dinosaurs, space, coloring, stuffed animals...",
+    role = discord.ui.TextInput(
+        label="Community Role",
+        placeholder="Your role in the community (optional)",
+        required=False,
+        max_length=200
+    )
+    
+    favorites = discord.ui.TextInput(
+        label="Favorites",
+        placeholder="Things you love and enjoy!",
         style=discord.TextStyle.paragraph,
         required=True,
         max_length=500
     )
     
     about = discord.ui.TextInput(
-        label="Tell Us About Yourself!",
+        label="More About You",
         placeholder="Share anything else you'd like the crew to know!",
         style=discord.TextStyle.paragraph,
         required=False,
@@ -664,12 +671,20 @@ class IntroModal(discord.ui.Modal, title="✨ Introduce Yourself to the Crew!"):
         )
         
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
-        embed.add_field(name="👤 Age", value=self.age.value, inline=True)
-        embed.add_field(name="💫 Pronouns", value=self.pronouns.value, inline=True)
-        embed.add_field(name="⭐ Likes", value=self.likes.value, inline=False)
+        
+        # Format the introduction in the requested style
+        intro_text = f"○ **Age:** {self.age.value}\n"
+        intro_text += f"□ **Pronouns:** {self.pronouns.value}\n"
+        
+        if self.role.value:
+            intro_text += f"☆ **Community role:** {self.role.value}\n"
+        
+        intro_text += f"♡ **Favorites:** {self.favorites.value}"
+        
+        embed.description = intro_text
         
         if self.about.value:
-            embed.add_field(name="✨ About Me", value=self.about.value, inline=False)
+            embed.add_field(name="◇ More about me", value=self.about.value, inline=False)
         
         embed.set_footer(text=f"New crew member aboard! • {interaction.guild.name}")
         
