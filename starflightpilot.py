@@ -8,29 +8,22 @@ import logging
 import random
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-import psycopg2
-from psycopg2.extras import RealDictCursor
 import io
-from PIL import Image
-import base64
+import psycopg2
 import re
+from PIL import Image
 
 # Load environment variables
 load_dotenv()
 
 # --- CONFIGURATION ---
 TOKEN = os.getenv('DISCORD_TOKEN')
-DATABASE_URL = os.getenv('DATABASE_URL')  # PostgreSQL connection string
 BACKUP_FILE = 'ship_backup.json'
+PLUSHIES_FILE = 'plushies.json'
 MISSIONS_FILE = 'missions.json'
 ENCOURAGEMENTS_FILE = 'encouragements.json'
 EMBEDS_FOLDER = 'saved_embeds'
-# NOTE: Replace with your actual Staff Role ID
 STAFF_ROLE_ID = 1454538884682612940
-
-# Image settings
-MAX_IMAGE_SIZE = (800, 800)  # Max dimensions
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB max upload
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -39,285 +32,93 @@ logger = logging.getLogger('StarflightBot')
 # Ensure folders exist
 os.makedirs(EMBEDS_FOLDER, exist_ok=True)
 
-# --- DATABASE CONNECTION ---
-
-class Database:
-    """Database connection manager"""
-    
-    @staticmethod
-    def get_connection():
-        """Get a database connection"""
-        try:
-            conn = psycopg2.connect(DATABASE_URL)
-            return conn
-        except Exception as e:
-            logger.error(f"Database connection failed: {e}")
-            return None
-    
-    @staticmethod
-    def init_tables():
-        """Initialize database tables"""
-        conn = Database.get_connection()
-        if not conn:
-            logger.error("Failed to initialize database tables")
-            return False
-        
-        try:
-            with conn.cursor() as cur:
-                # Plushies table
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS plushies (
-                        id SERIAL PRIMARY KEY,
-                        user_id BIGINT NOT NULL,
-                        name VARCHAR(100) NOT NULL,
-                        species VARCHAR(100) NOT NULL,
-                        color VARCHAR(100),
-                        description TEXT NOT NULL,
-                        personality VARCHAR(200),
-                        registered_date DATE NOT NULL,
-                        image_data TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE(user_id, name)
-                    )
-                """)
-                
-                # Create index for faster lookups
-                cur.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_plushies_user 
-                    ON plushies(user_id)
-                """)
-                
-                conn.commit()
-                logger.info("Database tables initialized successfully")
-                return True
-        except Exception as e:
-            logger.error(f"Failed to initialize tables: {e}")
-            conn.rollback()
-            return False
-        finally:
-            conn.close()
-
-
-# --- IMAGE PROCESSING ---
-
-class ImageProcessor:
-    """Handles image compression and encoding"""
-    
-    @staticmethod
-    async def process_attachment(attachment: discord.Attachment) -> Optional[str]:
-        """Process and compress an image attachment"""
-        
-        # Check file size
-        if attachment.size > MAX_FILE_SIZE:
-            return None
-        
-        # Check if it's an image
-        if not attachment.content_type or not attachment.content_type.startswith('image/'):
-            return None
-        
-        try:
-            # Download image
-            image_data = await attachment.read()
-            image = Image.open(io.BytesIO(image_data))
-            
-            # Convert to RGB if necessary
-            if image.mode in ('RGBA', 'P'):
-                background = Image.new('RGB', image.size, (255, 255, 255))
-                if image.mode == 'RGBA':
-                    background.paste(image, mask=image.split()[3])
-                else:
-                    background.paste(image)
-                image = background
-            elif image.mode != 'RGB':
-                image = image.convert('RGB')
-            
-            # Resize if needed
-            # Image.Resampling.LANCZOS is the recommended modern approach
-            image.thumbnail(MAX_IMAGE_SIZE, Image.LANCZOS)
-            
-            # Compress to JPEG
-            output = io.BytesIO()
-            image.save(output, format='JPEG', quality=85, optimize=True)
-            output.seek(0)
-            
-            # Encode to base64
-            encoded = base64.b64encode(output.read()).decode('utf-8')
-            
-            return encoded
-            
-        except Exception as e:
-            logger.error(f"Failed to process image: {e}")
-            return None
-    
-    @staticmethod
-    def create_discord_file(encoded_data: str, filename: str = "plushie.jpg") -> Optional[discord.File]:
-        """Create a Discord file from base64 encoded data"""
-        try:
-            image_bytes = base64.b64decode(encoded_data)
-            return discord.File(io.BytesIO(image_bytes), filename=filename)
-        except Exception as e:
-            logger.error(f"Failed to create Discord file: {e}")
-            return None
-
+# Global session storage for embed builder
+user_embed_sessions = {}
 
 # --- DATA STORAGE ---
 
-class PlushieManager:
-    """Manages plushie collection storage in database"""
-    
-    @staticmethod
-    def add_plushie(user_id: int, plushie_data: Dict) -> bool:
-        """Add a plushie to a user's collection"""
-        conn = Database.get_connection()
-        if not conn:
-            return False
-        
-        try:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO plushies 
-                    (user_id, name, species, color, description, personality, registered_date, image_data)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """, (
-                    user_id,
-                    plushie_data['name'],
-                    plushie_data['species'],
-                    plushie_data.get('color', 'Unknown'),
-                    plushie_data['description'],
-                    plushie_data.get('personality', 'Mysterious'),
-                    plushie_data['registered_date'],
-                    plushie_data.get('image_data')
-                ))
-                conn.commit()
-                return True
-        except psycopg2.IntegrityError:
-            conn.rollback()
-            return False # Duplicate entry
-        except Exception as e:
-            logger.error(f"Failed to add plushie: {e}")
-            conn.rollback()
-            return False
-        finally:
-            conn.close()
-    
-    @staticmethod
-    def update_plushie(user_id: int, old_name: str, plushie_data: Dict) -> bool:
-        """Update an existing plushie"""
-        conn = Database.get_connection()
-        if not conn:
-            return False
-        
-        # Normalize the image_data key lookup to allow it to be optional in the input dict
-        image_data = plushie_data.get('image_data', plushie_data.get('existing_image_data'))
+DATABASE_URL = os.getenv('DATABASE_URL')
 
+class PlushieManager:
+    """Manages plushie collection storage using Railway SQL (PostgreSQL)"""
+    
+    @staticmethod
+    def get_db_connection():
+        return psycopg2.connect(DATABASE_URL)
+
+    @staticmethod
+    def init_db():
+        """Creates the necessary table if it doesn't exist"""
+        conn = PlushieManager.get_db_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS plushies (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                name TEXT NOT NULL,
+                species TEXT,
+                color TEXT,
+                description TEXT,
+                personality TEXT,
+                registered_date TEXT,
+                image_blob BYTEA
+            )
+        ''')
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    @staticmethod
+    def add_plushie(user_id: int, p_data: Dict, image_bytes: Optional[bytes] = None) -> bool:
+        """Saves a plushie and its compressed image to the SQL database"""
         try:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    UPDATE plushies 
-                    SET name = %s, species = %s, color = %s, 
-                        description = %s, personality = %s, image_data = %s
-                    WHERE user_id = %s AND LOWER(name) = LOWER(%s)
-                """, (
-                    plushie_data['name'],
-                    plushie_data['species'],
-                    plushie_data.get('color', 'Unknown'),
-                    plushie_data['description'],
-                    plushie_data.get('personality', 'Mysterious'),
-                    image_data,
-                    user_id,
-                    old_name
-                ))
-                conn.commit()
-                return cur.rowcount > 0
+            conn = PlushieManager.get_db_connection()
+            cur = conn.cursor()
+            
+            # Check for duplicates
+            cur.execute("SELECT id FROM plushies WHERE user_id = %s AND LOWER(name) = LOWER(%s)", (user_id, p_data['name']))
+            if cur.fetchone():
+                return False
+
+            cur.execute('''
+                INSERT INTO plushies (user_id, name, species, color, description, personality, registered_date, image_blob)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (
+                user_id, p_data['name'], p_data['species'], p_data['color'], 
+                p_data['description'], p_data['personality'], p_data['registered_date'],
+                psycopg2.Binary(image_bytes) if image_bytes else None
+            ))
+            
+            conn.commit()
+            return True
         except Exception as e:
-            logger.error(f"Failed to update plushie: {e}")
-            conn.rollback()
+            logger.error(f"SQL Error: {e}")
             return False
         finally:
+            cur.close()
             conn.close()
-    
+
     @staticmethod
     def get_plushies(user_id: int) -> List[Dict]:
-        """Get all plushies for a user"""
-        conn = Database.get_connection()
-        if not conn:
-            return []
-        
-        try:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("""
-                    SELECT id, user_id, name, species, color, description, 
-                            personality, registered_date, image_data, created_at
-                    FROM plushies 
-                    WHERE user_id = %s
-                    ORDER BY created_at DESC
-                """, (user_id,))
-                results = cur.fetchall()
-                # Convert date/timestamp objects to strings for clean dict output
-                for row in results:
-                    if row['registered_date']:
-                        row['registered_date'] = row['registered_date'].isoformat()
-                    if row['created_at']:
-                        row['created_at'] = row['created_at'].isoformat()
-                return [dict(row) for row in results]
-        except Exception as e:
-            logger.error(f"Failed to get plushies: {e}")
-            return []
-        finally:
-            conn.close()
-    
-    @staticmethod
-    def get_plushie(user_id: int, plushie_name: str) -> Optional[Dict]:
-        """Get a specific plushie by name"""
-        conn = Database.get_connection()
-        if not conn:
-            return None
-        
-        try:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("""
-                    SELECT id, user_id, name, species, color, description, 
-                            personality, registered_date, image_data, created_at
-                    FROM plushies 
-                    WHERE user_id = %s AND LOWER(name) = LOWER(%s)
-                """, (user_id, plushie_name))
-                result = cur.fetchone()
-                if result:
-                    # Convert date/timestamp objects to strings
-                    if result.get('registered_date'):
-                        result['registered_date'] = result['registered_date'].isoformat()
-                    if result.get('created_at'):
-                        result['created_at'] = result['created_at'].isoformat()
-                    return dict(result)
-                return None
-        except Exception as e:
-            logger.error(f"Failed to get plushie: {e}")
-            return None
-        finally:
-            conn.close()
-    
-    @staticmethod
-    def remove_plushie(user_id: int, plushie_name: str) -> bool:
-        """Remove a plushie from a user's collection"""
-        conn = Database.get_connection()
-        if not conn:
-            return False
-        
-        try:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    DELETE FROM plushies 
-                    WHERE user_id = %s AND LOWER(name) = LOWER(%s)
-                """, (user_id, plushie_name))
-                conn.commit()
-                return cur.rowcount > 0
-        except Exception as e:
-            logger.error(f"Failed to remove plushie: {e}")
-            conn.rollback()
-            return False
-        finally:
-            conn.close()
+        """Retrieves summary for a user"""
+        conn = PlushieManager.get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT name, species FROM plushies WHERE user_id = %s", (user_id,))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return [{"name": r[0], "species": r[1]} for r in rows]
 
+    @staticmethod
+    def get_plushie_full(user_id: int, name: str):
+        """Retrieves full details including image blob"""
+        conn = PlushieManager.get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT name, species, color, description, personality, registered_date, image_blob FROM plushies WHERE user_id = %s AND LOWER(name) = LOWER(%s)", (user_id, name))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        return row
 
 class MissionGenerator:
     """Generates missions for Little Astronauts"""
@@ -347,22 +148,28 @@ class MissionGenerator:
     
     @staticmethod
     def load_missions() -> List[str]:
+        """Load missions from file, or return defaults if file doesn't exist"""
         if not os.path.exists(MISSIONS_FILE):
+            # Create the file with default missions
             MissionGenerator.save_missions(MissionGenerator.DEFAULT_MISSIONS)
             return MissionGenerator.DEFAULT_MISSIONS
         
         try:
             with open(MISSIONS_FILE, 'r', encoding='utf-8') as f:
                 missions = json.load(f)
+                # Validate that it's a list
                 if isinstance(missions, list) and missions:
                     return missions
-                return MissionGenerator.DEFAULT_MISSIONS
+                else:
+                    logger.warning("Invalid missions.json format, using defaults")
+                    return MissionGenerator.DEFAULT_MISSIONS
         except Exception as e:
-            logger.error(f"Failed to load missions: {e}")
+            logger.error(f"Failed to load missions: {e}, using defaults")
             return MissionGenerator.DEFAULT_MISSIONS
     
     @staticmethod
     def save_missions(missions: List[str]) -> bool:
+        """Save missions to file"""
         try:
             with open(MISSIONS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(missions, f, indent=4)
@@ -373,12 +180,13 @@ class MissionGenerator:
     
     @staticmethod
     def get_mission() -> str:
+        """Get a random mission"""
         missions = MissionGenerator.load_missions()
         return random.choice(missions)
 
 
 class EncouragementGenerator:
-    """Generates encouraging messages"""
+    """Generates encouraging messages for fuel refills"""
     
     DEFAULT_ENCOURAGEMENTS = [
         "is sending you rocket fuel! 🚀✨",
@@ -389,28 +197,34 @@ class EncouragementGenerator:
         "is sending you galaxy-sized hugs! 🌌🤗",
         "believes you can reach the stars! ✨🌠",
         "is your co-pilot cheering you on! 🛰️💪",
-        "sent you a care package from Mission Control! 📦👍",
+        "sent you a care package from Mission Control! 📦💝",
         "thinks you shine brighter than a supernova! 💫⭐"
     ]
     
     @staticmethod
     def load_encouragements() -> List[str]:
+        """Load encouragements from file, or return defaults if file doesn't exist"""
         if not os.path.exists(ENCOURAGEMENTS_FILE):
+            # Create the file with default encouragements
             EncouragementGenerator.save_encouragements(EncouragementGenerator.DEFAULT_ENCOURAGEMENTS)
             return EncouragementGenerator.DEFAULT_ENCOURAGEMENTS
         
         try:
             with open(ENCOURAGEMENTS_FILE, 'r', encoding='utf-8') as f:
                 encouragements = json.load(f)
+                # Validate that it's a list
                 if isinstance(encouragements, list) and encouragements:
                     return encouragements
-                return EncouragementGenerator.DEFAULT_ENCOURAGEMENTS
+                else:
+                    logger.warning("Invalid encouragements.json format, using defaults")
+                    return EncouragementGenerator.DEFAULT_ENCOURAGEMENTS
         except Exception as e:
-            logger.error(f"Failed to load encouragements: {e}")
+            logger.error(f"Failed to load encouragements: {e}, using defaults")
             return EncouragementGenerator.DEFAULT_ENCOURAGEMENTS
     
     @staticmethod
     def save_encouragements(encouragements: List[str]) -> bool:
+        """Save encouragements to file"""
         try:
             with open(ENCOURAGEMENTS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(encouragements, f, indent=4)
@@ -421,6 +235,7 @@ class EncouragementGenerator:
     
     @staticmethod
     def get_encouragement() -> str:
+        """Get a random encouragement"""
         encouragements = EncouragementGenerator.load_encouragements()
         return random.choice(encouragements)
 
@@ -432,6 +247,7 @@ class BackupManager:
     
     @staticmethod
     def load() -> Optional[Dict]:
+        """Load backup data from file"""
         if not os.path.exists(BACKUP_FILE):
             return None
         try:
@@ -443,6 +259,7 @@ class BackupManager:
     
     @staticmethod
     def save(data: Dict) -> bool:
+        """Save backup data to file"""
         try:
             with open(BACKUP_FILE, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=4)
@@ -453,8 +270,10 @@ class BackupManager:
     
     @staticmethod
     async def create_backup(guild: discord.Guild) -> Dict:
+        """Create a backup of the guild's roles and channels"""
         backup = {"roles": [], "categories": []}
         
+        # Backup roles
         for role in reversed(guild.roles):
             if role.is_default():
                 continue
@@ -465,6 +284,7 @@ class BackupManager:
                 "hoist": role.hoist
             })
         
+        # Backup categories and channels
         for cat in guild.categories:
             cat_info = {
                 "name": cat.name,
@@ -485,6 +305,7 @@ class BackupManager:
     
     @staticmethod
     def _serialize_overwrites(overwrites: Dict) -> List[Dict]:
+        """Convert channel overwrites to serializable format"""
         result = []
         for target, ovr in overwrites.items():
             allow, deny = ovr.pair()
@@ -498,6 +319,7 @@ class BackupManager:
     
     @staticmethod
     async def apply_overwrites(guild: discord.Guild, item, ovr_data: List[Dict]):
+        """Apply permission overwrites to a channel or category"""
         overwrites = {}
         
         for o in ovr_data:
@@ -519,9 +341,9 @@ class BackupManager:
             try:
                 await item.edit(overwrites=overwrites)
             except discord.Forbidden:
-                logger.warning(f"Permission denied editing {item.name}")
+                logger.warning(f"Permission denied when editing overwrites for {item.name}")
             except Exception as e:
-                logger.error(f"Error editing {item.name}: {e}")
+                logger.error(f"Error editing overwrites for {item.name}: {e}")
 
 
 class SyncManager:
@@ -529,6 +351,7 @@ class SyncManager:
     
     @staticmethod
     async def sync_roles(guild: discord.Guild, backup_roles: List[Dict]):
+        """Sync roles with backup, removing extras"""
         backup_role_names = {r.get("name") for r in backup_roles}
         
         # Delete roles not in backup
@@ -543,7 +366,7 @@ class SyncManager:
             except Exception as e:
                 logger.error(f"Failed to delete role {role.name}: {e}")
         
-        # Create/Update roles from backup
+        # Create or update roles from backup
         for r in backup_roles:
             role = discord.utils.get(guild.roles, name=r.get("name"))
             
@@ -571,6 +394,7 @@ class SyncManager:
     
     @staticmethod
     async def sync_categories(guild: discord.Guild, backup_categories: List[Dict]):
+        """Sync categories and channels with backup, removing extras"""
         backup_cat_names = {c.get("name") for c in backup_categories}
         
         # Delete categories not in backup
@@ -584,12 +408,13 @@ class SyncManager:
                 except Exception as e:
                     logger.error(f"Failed to delete category {cat.name}: {e}")
         
-        # Create/Update categories and channels
+        # Process each category from backup
         for c in backup_categories:
             await SyncManager._sync_category(guild, c)
     
     @staticmethod
     async def _sync_category(guild: discord.Guild, cat_data: Dict):
+        """Sync a single category and its channels"""
         cat_name = cat_data.get("name")
         cat = discord.utils.get(guild.categories, name=cat_name)
         
@@ -600,10 +425,11 @@ class SyncManager:
             
             await BackupManager.apply_overwrites(guild, cat, cat_data.get("overwrites", []))
             
+            # Sync channels in this category
             backup_channels = cat_data.get("channels", [])
             backup_chan_names = {ch.get("name") for ch in backup_channels}
             
-            # Delete channels not in backup within this category
+            # Delete extra channels
             for actual_ch in cat.channels:
                 if actual_ch.name not in backup_chan_names:
                     try:
@@ -612,7 +438,7 @@ class SyncManager:
                     except Exception as e:
                         logger.error(f"Failed to delete channel {actual_ch.name}: {e}")
             
-            # Create/Update channels in this category
+            # Create/update channels
             for ch_data in backup_channels:
                 await SyncManager._sync_channel(guild, cat, ch_data)
                 
@@ -621,6 +447,7 @@ class SyncManager:
     
     @staticmethod
     async def _sync_channel(guild: discord.Guild, cat: discord.CategoryChannel, ch_data: Dict):
+        """Sync a single channel"""
         ch_name = ch_data.get("name")
         ch = discord.utils.get(cat.channels, name=ch_name)
         
@@ -649,21 +476,32 @@ class StarflightBot(commands.Bot):
     
     async def setup_hook(self):
         logger.info("🛰️ Preparing Starflight command tree...")
-        Database.init_tables()
-        await self.tree.sync() # Sync commands globally/per-guild as needed
 
+class ImageProcessor:
+    @staticmethod
+    def compress_image(image_bytes: bytes) -> bytes:
+        """Resizes image to 800x800 and compresses it to JPEG"""
+        img = Image.open(io.BytesIO(image_bytes))
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        img.thumbnail((800, 800))
+        buffer = io.BytesIO()
+        img.save(buffer, format="JPEG", quality=85, optimize=True)
+        return buffer.getvalue()
 
 bot = StarflightBot()
 
 
 @bot.event
 async def on_ready():
+    PlushieManager.init_db()  # Add this line
     logger.info(f'🚀 Starflight Pilot online as {bot.user}')
 
 
 # --- PERMISSION CHECK ---
 
 def is_staff_or_admin():
+    """Check if user has admin permissions or staff role"""
     async def predicate(interaction: discord.Interaction):
         is_admin = interaction.user.guild_permissions.administrator
         has_role = discord.utils.get(interaction.user.roles, id=STAFF_ROLE_ID) is not None
@@ -680,11 +518,12 @@ def is_staff_or_admin():
     return app_commands.check(predicate)
 
 
-# --- SLASH COMMANDS (STAFF) ---
+# --- SLASH COMMANDS ---
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def sync_tree(ctx):
+    """Sync slash commands to Discord"""
     await bot.tree.sync()
     await ctx.send("📡 Command tree synced to Discord.")
 
@@ -692,11 +531,13 @@ async def sync_tree(ctx):
 @bot.tree.command(name="list_roles", description="Get a list of role mention codes")
 @is_staff_or_admin()
 async def list_roles(interaction: discord.Interaction):
+    """Lists roles with their mention codes, split into chunks"""
     await interaction.response.defer(ephemeral=True)
     
     roles = interaction.guild.roles
     full_role_list = [f"`{role.name}: <@&{role.id}>`" for role in reversed(roles)]
     
+    # Send in chunks to avoid hitting message limits
     current_chunk = "📜 **Role ID Manifest:**\n"
     for role_entry in full_role_list:
         if len(current_chunk) + len(role_entry) > 1800:
@@ -708,64 +549,79 @@ async def list_roles(interaction: discord.Interaction):
         await interaction.followup.send(current_chunk, ephemeral=True)
 
 
-@bot.tree.command(name="post_embed", description="Post a JSON template")
+@bot.tree.command(name="post_embed", description="Post a JSON template with mentions and images")
 @app_commands.describe(filename="JSON filename", channel="Target channel")
 @is_staff_or_admin()
 async def post_embed(interaction: discord.Interaction, filename: str, channel: discord.TextChannel):
-    filepath = os.path.join(EMBEDS_FOLDER, filename if filename.endswith('.json') else filename + '.json')
+    """Post embeds from a JSON template file"""
+    if not filename.endswith('.json'):
+        filename += '.json'
     
-    if not os.path.exists(filepath):
-        return await interaction.response.send_message(f"❌ `{filepath}` not found. (Must be in '{EMBEDS_FOLDER}')", ephemeral=True)
+    if not os.path.exists(filename):
+        return await interaction.response.send_message(
+            f"❌ `{filename}` not found.",
+            ephemeral=True
+        )
     
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filename, 'r', encoding='utf-8') as f:
             data = json.load(f)
     except Exception as e:
-        return await interaction.response.send_message(f"❌ Error reading file: {e}", ephemeral=True)
+        return await interaction.response.send_message(
+            f"❌ Error reading file: {e}",
+            ephemeral=True
+        )
     
+    # Build embeds
     embed_list = []
     for e_data in data.get("embeds", []):
         embed = discord.Embed(
-            title=e_data.get("title", ""),
-            description=e_data.get("description", ""),
-            color=e_data.get("color", discord.Color.blue().value),
-            url=e_data.get("url")
+            title=e_data.get("title"),
+            description=e_data.get("description"),
+            color=e_data.get("color", discord.Color.blue().value)
         )
         
-        if "image" in e_data and isinstance(e_data["image"], dict):
-            embed.set_image(url=e_data["image"].get("url"))
+        if "image" in e_data:
+            embed.set_image(url=e_data["image"]["url"])
         
-        if "thumbnail" in e_data and isinstance(e_data["thumbnail"], dict):
-            embed.set_thumbnail(url=e_data["thumbnail"].get("url"))
-
         if "footer" in e_data:
-            footer_text = e_data["footer"].get("text") if isinstance(e_data["footer"], dict) else str(e_data["footer"])
+            footer_text = (e_data["footer"].get("text") 
+                          if isinstance(e_data["footer"], dict) 
+                          else e_data["footer"])
             embed.set_footer(text=footer_text)
         
-        if "author" in e_data and isinstance(e_data["author"], dict):
-            embed.set_author(name=e_data["author"].get("name"), url=e_data["author"].get("url"), icon_url=e_data["author"].get("icon_url"))
-
         for field in e_data.get("fields", []):
-            embed.add_field(name=field.get("name", "\u200b"), value=field.get("value", "\u200b"), inline=field.get("inline", False))
+            embed.add_field(
+                name=field["name"],
+                value=field["value"],
+                inline=field.get("inline", False)
+            )
         
         embed_list.append(embed)
     
     try:
         await channel.send(content=data.get("content", ""), embeds=embed_list)
-        await interaction.response.send_message(f"✅ Sent `{filename}` to {channel.mention}", ephemeral=True)
+        await interaction.response.send_message(
+            f"✅ Sent to {channel.mention}",
+            ephemeral=True
+        )
     except Exception as e:
-        await interaction.response.send_message(f"❌ Error sending message: {e}", ephemeral=True)
+        await interaction.response.send_message(
+            f"❌ Error sending message: {e}",
+            ephemeral=True
+        )
 
 
 @bot.tree.command(name="backup_ship", description="Saves current server state")
 @is_staff_or_admin()
 async def backup_ship(interaction: discord.Interaction):
+    """Create a backup of the server's current state"""
     await interaction.response.defer(ephemeral=True)
     
     backup = await BackupManager.create_backup(interaction.guild)
     
     if BackupManager.save(backup):
-        await interaction.followup.send("💾 Backup Complete. The ship state has been recorded.")
+        await interaction.followup.send("💾 Backup Complete.")
     else:
         await interaction.followup.send("❌ Failed to save backup.")
 
@@ -773,34 +629,72 @@ async def backup_ship(interaction: discord.Interaction):
 @bot.tree.command(name="sync_ship", description="Restores from backup and REMOVES extras")
 @is_staff_or_admin()
 async def sync_ship(interaction: discord.Interaction):
+    """Sync server with backup, removing anything not in backup"""
     await interaction.response.defer(ephemeral=True)
     
     data = BackupManager.load()
     if not data:
-        return await interaction.followup.send("❌ No backup file found. Cannot perform sync.")
+        return await interaction.followup.send("❌ No backup file found.")
     
     guild = interaction.guild
     
+    # Sync roles
     await SyncManager.sync_roles(guild, data.get("roles", []))
+    
+    # Sync categories and channels
     await SyncManager.sync_categories(guild, data.get("categories", []))
     
-    await interaction.followup.send("🚀 Sync Complete: Server matches backup exactly. Unmanaged roles/channels were removed.")
+    await interaction.followup.send("🚀 Sync Complete: Server matches backup exactly.")
 
 
-# --- MODALS ---
+# --- NEW FEATURE COMMANDS ---
 
 class IntroModal(discord.ui.Modal, title="✨ Introduce Yourself to the Crew!"):
-    age = discord.ui.TextInput(label="Age/Age Range", placeholder="Your age or age range", required=True, max_length=50)
-    pronouns = discord.ui.TextInput(label="Pronouns", placeholder="Your pronouns", required=True, max_length=100)
-    role = discord.ui.TextInput(label="Community Role", placeholder="Your role (optional)", required=False, max_length=200)
-    favorites = discord.ui.TextInput(label="Favorites", placeholder="Things you love!", style=discord.TextStyle.paragraph, required=True, max_length=500)
-    about = discord.ui.TextInput(label="More About You", placeholder="Share more!", style=discord.TextStyle.paragraph, required=False, max_length=1000)
+    """Modal for collecting introduction information"""
+    
+    age = discord.ui.TextInput(
+        label="Age/Age Range",
+        placeholder="Your age or age range",
+        required=True,
+        max_length=50
+    )
+    
+    pronouns = discord.ui.TextInput(
+        label="Pronouns",
+        placeholder="Your pronouns",
+        required=True,
+        max_length=100
+    )
+    
+    role = discord.ui.TextInput(
+        label="Community Role",
+        placeholder="Your role in the community (optional)",
+        required=False,
+        max_length=200
+    )
+    
+    favorites = discord.ui.TextInput(
+        label="Favorites",
+        placeholder="Things you love and enjoy!",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=500
+    )
+    
+    about = discord.ui.TextInput(
+        label="More About You",
+        placeholder="Share anything else you'd like the crew to know!",
+        style=discord.TextStyle.paragraph,
+        required=False,
+        max_length=1000
+    )
     
     def __init__(self, channel: discord.TextChannel):
         super().__init__()
         self.channel = channel
     
     async def on_submit(self, interaction: discord.Interaction):
+        # Create embed with user's intro
         embed = discord.Embed(
             title=f"🚀 Welcome Aboard, {interaction.user.display_name}!",
             color=discord.Color.blue(),
@@ -809,6 +703,7 @@ class IntroModal(discord.ui.Modal, title="✨ Introduce Yourself to the Crew!"):
         
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
         
+        # Format the introduction in the requested style
         intro_text = f"○ **Age:** {self.age.value}\n"
         intro_text += f"□ **Pronouns:** {self.pronouns.value}\n"
         
@@ -826,233 +721,557 @@ class IntroModal(discord.ui.Modal, title="✨ Introduce Yourself to the Crew!"):
         
         try:
             await self.channel.send(embed=embed)
-            await interaction.response.send_message("✅ Your introduction has been posted! Welcome aboard! 🚀", ephemeral=True)
+            await interaction.response.send_message(
+                "✅ Your introduction has been posted to the crew! Welcome aboard! 🚀",
+                ephemeral=True
+            )
         except Exception as e:
-            await interaction.response.send_message(f"❌ Failed to post introduction: {e}", ephemeral=True)
+            await interaction.response.send_message(
+                f"❌ Failed to post introduction: {e}",
+                ephemeral=True
+            )
 
 
 class PlushieScanModal(discord.ui.Modal, title="🧸 Register Your Plushie!"):
-    name = discord.ui.TextInput(label="Plushie Name", placeholder="What's your plushie's name?", required=True, max_length=100)
-    species = discord.ui.TextInput(label="Species/Type", placeholder="E.g., Starfox, Galactic Bear, Alien Slug", required=True, max_length=100)
-    color = discord.ui.TextInput(label="Primary Color", placeholder="E.g., Blue, Neon Green, Rainbow", required=False, max_length=100)
-    personality = discord.ui.TextInput(label="Personality", placeholder="E.g., Brave explorer, Shy scientist, Sleepy pilot", required=False, max_length=200)
-    description = discord.ui.TextInput(label="Description", placeholder="Tell us about their story and why they are special!", style=discord.TextStyle.paragraph, required=True, max_length=1000)
-
-    def __init__(self, image_data: Optional[str] = None):
-        super().__init__()
-        self.image_data = image_data
+    """Modal for collecting plushie information"""
     
-    async def on_submit(self, interaction: discord.Interaction):
-        plushie_data = {
-            'name': self.name.value.strip(),
-            'species': self.species.value.strip(),
-            'color': self.color.value.strip() or 'Unknown',
-            'personality': self.personality.value.strip() or 'Mysterious',
-            'description': self.description.value.strip(),
-            'registered_date': datetime.now(timezone.utc).date().isoformat(),
-            'image_data': self.image_data
-        }
-
-        if PlushieManager.add_plushie(interaction.user.id, plushie_data):
-            msg = f"✅ Plushie **{plushie_data['name']}** successfully registered! Welcome to the crew, little buddy!"
-            if not self.image_data:
-                msg += "\n\n**Note:** To add an image, use the `/update_plushie` command and attach the picture to the command message."
-            
-            await interaction.response.send_message(msg, ephemeral=True)
-        else:
-            await interaction.response.send_message(
-                f"❌ Failed to register **{plushie_data['name']}**. You might already have a plushie with that name.", 
-                ephemeral=True
-            )
-
-
-class PlushieUpdateModal(discord.ui.Modal, title="✨ Update Plushie Data!"):
-    new_name = discord.ui.TextInput(label="New Name (can be same)", required=True, max_length=100)
-    species = discord.ui.TextInput(label="Species/Type", required=True, max_length=100)
-    color = discord.ui.TextInput(label="Primary Color", required=False, max_length=100)
-    personality = discord.ui.TextInput(label="Personality", required=False, max_length=200)
-    description = discord.ui.TextInput(label="Description", style=discord.TextStyle.paragraph, required=True, max_length=1000)
-
-    def __init__(self, old_plushie: Dict):
-        super().__init__()
-        self.old_plushie = old_plushie
-        self.old_name = old_plushie['name']
-        
-        # Pre-fill fields
-        self.new_name.default = old_plushie['name']
-        self.species.default = old_plushie['species']
-        self.color.default = old_plushie.get('color', '')
-        self.personality.default = old_plushie.get('personality', '')
-        self.description.default = old_plushie['description']
-
-    async def on_submit(self, interaction: discord.Interaction):
-        plushie_data = {
-            'name': self.new_name.value.strip(),
-            'species': self.species.value.strip(),
-            'color': self.color.value.strip() or 'Unknown',
-            'personality': self.personality.value.strip() or 'Mysterious',
-            'description': self.description.value.strip(),
-            'existing_image_data': self.old_plushie.get('image_data') # Preserve existing image if no new one is uploaded
-        }
-
-        if PlushieManager.update_plushie(interaction.user.id, self.old_name, plushie_data):
-            await interaction.response.send_message(
-                f"✅ Plushie **{self.old_name}** successfully updated to **{plushie_data['name']}**!", 
-                ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                f"❌ Failed to update **{self.old_name}**. The new name might already be taken by another of your plushies.", 
-                ephemeral=True
-            )
-
-
-# --- SLASH COMMANDS (GENERAL) ---
-
-@bot.tree.command(name="intro", description="Post an introduction about yourself in the current channel.")
-@app_commands.describe(channel="The channel to post the introduction in")
-async def intro_command(interaction: discord.Interaction, channel: discord.TextChannel):
-    """Triggers the IntroModal"""
-    if not channel.permissions_for(interaction.user).send_messages:
-        return await interaction.response.send_message("❌ You do not have permission to post in that channel.", ephemeral=True)
-    
-    await interaction.response.send_modal(IntroModal(channel=channel))
-
-
-# --- SLASH COMMANDS (PLUSHIES) ---
-
-@bot.tree.command(name="register_plushie", description="Register a new plushie companion!")
-@app_commands.describe(image="Optional image attachment for your plushie")
-async def register_plushie(interaction: discord.Interaction, image: Optional[discord.Attachment] = None):
-    await interaction.response.defer(ephemeral=True, thinking=True)
-
-    image_data = None
-    if image:
-        image_data = await ImageProcessor.process_attachment(image)
-        if not image_data:
-            await interaction.followup.send(
-                "⚠️ Image upload failed. Please ensure the file is under 5MB and is a valid image type. You can still register the plushie without a picture.", 
-                ephemeral=True
-            )
-
-    await interaction.followup.send_modal(PlushieScanModal(image_data=image_data))
-
-
-@bot.tree.command(name="view_plushie", description="View the details of a plushie in your collection.")
-@app_commands.describe(name="The name of the plushie to view")
-async def view_plushie(interaction: discord.Interaction, name: str):
-    await interaction.response.defer(thinking=True)
-    
-    plushie = PlushieManager.get_plushie(interaction.user.id, name)
-    
-    if not plushie:
-        return await interaction.followup.send(f"❌ Plushie **{name}** not found in your collection.", ephemeral=True)
-
-    embed = discord.Embed(
-        title=f"🧸 {plushie['name']} - The {plushie['species']}",
-        color=discord.Color.from_rgb(173, 216, 230), # Light blue
-        timestamp=datetime.now(timezone.utc)
+    name = discord.ui.TextInput(
+        label="Plushie Name",
+        placeholder="What's your plushie's name?",
+        required=True,
+        max_length=100
     )
+    
+    species = discord.ui.TextInput(
+        label="Species/Type",
+        placeholder="e.g., Bear, Bunny, Dragon, Alien...",
+        required=True,
+        max_length=100
+    )
+    
+    color = discord.ui.TextInput(
+        label="Color(s)",
+        placeholder="e.g., Brown, Pink and Purple, Rainbow...",
+        required=False,
+        max_length=100
+    )
+    
+    description = discord.ui.TextInput(
+        label="Description/Backstory",
+        placeholder="Tell us about your plushie! What makes them special?",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=500
+    )
+    
+    personality = discord.ui.TextInput(
+        label="Personality Traits",
+        placeholder="e.g., Loves hugs, shy, adventurous, sleepy...",
+        required=False,
+        max_length=200
+    )
+    
+    def __init__(self, image_url: Optional[str] = None, existing_plushie: Optional[Dict] = None):
+        super().__init__()
+        self.image_url = image_url
+        self.is_edit = existing_plushie is not None
+        self.old_name = None
+        
+        # Pre-fill fields if editing
+        if existing_plushie:
+            self.old_name = existing_plushie["name"]
+            self.name.default = existing_plushie["name"]
+            self.species.default = existing_plushie["species"]
+            self.color.default = existing_plushie.get("color", "")
+            self.description.default = existing_plushie["description"]
+            self.personality.default = existing_plushie.get("personality", "")
+            if not image_url:
+                self.image_url = existing_plushie.get("image_url")
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        plushie_data = {
+            "name": self.name.value,
+            "species": self.species.value,
+            "color": self.color.value if self.color.value else "Unknown",
+            "description": self.description.value,
+            "personality": self.personality.value if self.personality.value else "Mysterious",
+            "registered_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "image_url": self.image_url
+        }
+        
+        if self.is_edit:
+            if PlushieManager.update_plushie(interaction.user.id, self.old_name, plushie_data):
+                embed = discord.Embed(
+                    title="🧸 Plushie Updated!",
+                    description=f"**{self.name.value}** has been updated in your collection!",
+                    color=discord.Color.blue()
+                )
+                embed.add_field(name="Species", value=self.species.value, inline=True)
+                embed.add_field(name="Color", value=plushie_data["color"], inline=True)
+                
+                if self.image_url:
+                    embed.set_image(url=self.image_url)
+                
+                await interaction.response.send_message(embed=embed)
+            else:
+                await interaction.response.send_message(
+                    f"❌ Failed to update plushie. Make sure the name exists!",
+                    ephemeral=True
+                )
+        else:
+            if PlushieManager.add_plushie(interaction.user.id, plushie_data):
+                embed = discord.Embed(
+                    title="🧸 Plushie Registered!",
+                    description=f"**{self.name.value}** has been added to your zero-gravity collection!",
+                    color=discord.Color.green()
+                )
+                embed.add_field(name="Species", value=self.species.value, inline=True)
+                embed.add_field(name="Color", value=plushie_data["color"], inline=True)
+                
+                if self.image_url:
+                    embed.set_image(url=self.image_url)
+                
+                embed.set_footer(text="Use /plushie_summon to see all your plushies!")
+                await interaction.response.send_message(embed=embed)
+            else:
+                await interaction.response.send_message(
+                    f"❌ You already have a plushie named **{self.name.value}** in your collection!",
+                    ephemeral=True
+                )
 
-    embed.set_author(name=f"{interaction.user.display_name}'s Companion")
+
+class EmbedBuilderModal(discord.ui.Modal, title="📝 Embed Builder"):
+    """Modal for creating/editing embeds"""
     
-    embed.add_field(name="🎨 Color", value=plushie.get('color', 'N/A'), inline=True)
-    embed.add_field(name="🎭 Personality", value=plushie.get('personality', 'N/A'), inline=True)
-    embed.add_field(name="🗓️ Registered", value=plushie.get('registered_date', 'N/A'), inline=True)
-    embed.add_field(name="📖 Story/Description", value=plushie['description'], inline=False)
+    title_text = discord.ui.TextInput(
+        label="Embed Title",
+        placeholder="Title of your embed",
+        required=False,
+        max_length=256
+    )
     
-    file = None
-    if plushie.get('image_data'):
-        file = ImageProcessor.create_discord_file(plushie['image_data'])
-        if file:
-            embed.set_image(url=f"attachment://{file.filename}")
+    description = discord.ui.TextInput(
+        label="Description",
+        placeholder="Main content of your embed",
+        style=discord.TextStyle.paragraph,
+        required=False,
+        max_length=4000
+    )
     
-    await interaction.followup.send(embed=embed, file=file or discord.utils.MISSING)
+    color = discord.ui.TextInput(
+        label="Color (hex code)",
+        placeholder="e.g., #FF5733 or blue, red, green",
+        required=False,
+        max_length=20
+    )
+    
+    footer = discord.ui.TextInput(
+        label="Footer Text",
+        placeholder="Small text at the bottom",
+        required=False,
+        max_length=2048
+    )
+    
+    image_url = discord.ui.TextInput(
+        label="Image URL",
+        placeholder="https://... (optional)",
+        required=False,
+        max_length=500
+    )
+    
+    def __init__(self, embed_name: str, existing_data: Optional[Dict] = None):
+        super().__init__()
+        self.embed_name = embed_name
+        
+        # Pre-fill if editing
+        if existing_data:
+            self.title_text.default = existing_data.get("title", "")
+            self.description.default = existing_data.get("description", "")
+            self.color.default = existing_data.get("color", "")
+            self.footer.default = existing_data.get("footer", "")
+            self.image_url.default = existing_data.get("image", "")
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        # Parse color
+        color_value = discord.Color.blue()
+        if self.color.value:
+            color_str = self.color.value.strip().lower()
+            try:
+                if color_str.startswith('#'):
+                    color_value = discord.Color(int(color_str[1:], 16))
+                elif color_str == 'red':
+                    color_value = discord.Color.red()
+                elif color_str == 'green':
+                    color_value = discord.Color.green()
+                elif color_str == 'blue':
+                    color_value = discord.Color.blue()
+                elif color_str == 'purple':
+                    color_value = discord.Color.purple()
+                elif color_str == 'gold':
+                    color_value = discord.Color.gold()
+                elif color_str == 'orange':
+                    color_value = discord.Color.orange()
+            except:
+                pass
+        
+        # Build embed data
+        embed_data = {
+            "title": self.title_text.value,
+            "description": self.description.value,
+            "color": self.color.value,
+            "footer": self.footer.value,
+            "image": self.image_url.value,
+            "fields": []
+        }
+        
+        # Save to file
+        filepath = os.path.join(EMBEDS_FOLDER, f"{self.embed_name}.json")
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(embed_data, f, indent=4)
+        except Exception as e:
+            return await interaction.response.send_message(
+                f"❌ Failed to save embed: {e}",
+                ephemeral=True
+            )
+        
+        # Create preview embed
+        preview = discord.Embed(
+            title=self.title_text.value or None,
+            description=self.description.value or None,
+            color=color_value
+        )
+        
+        if self.footer.value:
+            preview.set_footer(text=self.footer.value)
+        
+        if self.image_url.value:
+            preview.set_image(url=self.image_url.value)
+        
+        await interaction.response.send_message(
+            f"✅ Embed **{self.embed_name}** saved!\nUse `/embed_post {self.embed_name}` to post it.",
+            embed=preview,
+            ephemeral=True
+        )
 
 
-@bot.tree.command(name="list_plushies", description="See all the plushies you have registered.")
-async def list_plushies(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True, thinking=True)
+@bot.tree.command(name="intro", description="Introduce yourself to the crew!")
+@app_commands.describe(channel="Channel to post your introduction (optional)")
+async def intro(interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
+    """Open an introduction form for new crew members"""
+    target_channel = channel or interaction.channel
     
-    plushies = PlushieManager.get_plushies(interaction.user.id)
+    # Check if user has permission to send messages in the target channel
+    if not target_channel.permissions_for(interaction.user).send_messages:
+        return await interaction.response.send_message(
+            "❌ You don't have permission to post in that channel.",
+            ephemeral=True
+        )
+    
+    modal = IntroModal(target_channel)
+    await interaction.response.send_modal(modal)
+
+
+@bot.tree.command(name="plushie_scan", description="Register a plushie with a photo!")
+@app_commands.describe(photo="Upload a photo of your plushie")
+async def plushie_scan(interaction: discord.Interaction, photo: Optional[discord.Attachment] = None):
+    image_bytes = None
+    if photo:
+        if not photo.content_type.startswith("image/"):
+            return await interaction.response.send_message("❌ Please upload an image file.", ephemeral=True)
+        raw_data = await photo.read()
+        image_bytes = ImageProcessor.compress_image(raw_data)
+    
+    # Pass the compressed bytes to the modal
+    modal = PlushieScanModal(image_bytes=image_bytes)
+    await interaction.response.send_modal(modal)
+
+
+@bot.tree.command(name="plushie_summon", description="View a plushie collection!")
+@app_commands.describe(user="User whose collection to view (leave empty for your own)")
+async def plushie_summon(interaction: discord.Interaction, user: Optional[discord.Member] = None):
+    """Display all registered plushies for a user"""
+    target_user = user or interaction.user
+    plushies = PlushieManager.get_plushies(target_user.id)
     
     if not plushies:
-        return await interaction.followup.send("You haven't registered any plushies yet! Use `/register_plushie` to scan your first companion. 🌟", ephemeral=True)
-
-    plushie_list = [f"• **{p['name']}** ({p['species']})" for p in plushies]
+        if target_user.id == interaction.user.id:
+            embed = discord.Embed(
+                title="🧸 Zero-G Plushie Collection",
+                description="Your collection is empty! Use `/plushie_scan` to register your first plushie!",
+                color=discord.Color.blue()
+            )
+        else:
+            embed = discord.Embed(
+                title=f"🧸 {target_user.display_name}'s Plushie Collection",
+                description=f"{target_user.display_name} hasn't registered any plushies yet!",
+                color=discord.Color.blue()
+            )
+    else:
+        # Create a summary list
+        plushie_list = "\n".join([
+            f"🧸 **{p['name']}** - {p['species']}" 
+            for p in plushies
+        ])
+        
+        embed = discord.Embed(
+            title=f"🧸 {target_user.display_name}'s Plushie Collection",
+            description=plushie_list,
+            color=discord.Color.purple()
+        )
+        embed.set_footer(text=f"Total Plushies: {len(plushies)} • Use /plushie_info [user] [name] for details!")
     
-    embed = discord.Embed(
-        title=f"🔭 {interaction.user.display_name}'s Plushie Fleet ({len(plushies)})",
-        description="\n".join(plushie_list),
-        color=discord.Color.purple(),
-        timestamp=datetime.now(timezone.utc)
-    )
-    
-    await interaction.followup.send(embed=embed, ephemeral=True)
+    embed.set_thumbnail(url=target_user.display_avatar.url)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="update_plushie", description="Update the details of an existing plushie.")
-@app_commands.describe(name="The name of the plushie to update", image="Optional new image attachment for your plushie")
-async def update_plushie(interaction: discord.Interaction, name: str, image: Optional[discord.Attachment] = None):
-    await interaction.response.defer(ephemeral=True, thinking=True)
+@bot.tree.command(name="plushie_info", description="View a plushie's profile")
+@app_commands.describe(name="Name of the plushie", user="User who owns the plushie")
+async def plushie_info(interaction: discord.Interaction, name: str, user: Optional[discord.Member] = None):
+    target_user = user or interaction.user
+    data = PlushieManager.get_plushie_full(target_user.id, name)
     
+    if not data:
+        return await interaction.response.send_message(f"❌ Couldn't find **{name}**.", ephemeral=True)
+
+    p_name, species, color, desc, personality, date, image_blob = data
+    
+    embed = discord.Embed(title=f"🧸 {p_name}'s Profile", description=desc, color=discord.Color.purple())
+    embed.add_field(name="🐾 Species", value=species, inline=True)
+    embed.add_field(name="🎨 Color", value=color, inline=True)
+    embed.add_field(name="✨ Personality", value=personality, inline=False)
+    
+    file = None
+    if image_blob:
+        file = discord.File(io.BytesIO(image_blob), filename="plushie.jpg")
+        embed.set_image(url="attachment://plushie.jpg")
+    
+    await interaction.response.send_message(embed=embed, file=file, ephemeral=True)
+
+@bot.tree.command(name="plushie_edit", description="Edit an existing plushie")
+@app_commands.describe(name="Name of the plushie to edit", image_url="Optional: New image URL")
+async def plushie_edit(interaction: discord.Interaction, name: str, image_url: Optional[str] = None):
+    """Edit an existing plushie"""
     plushie = PlushieManager.get_plushie(interaction.user.id, name)
     
     if not plushie:
-        return await interaction.followup.send(f"❌ Plushie **{name}** not found in your collection.", ephemeral=True)
-
-    # Handle optional image update
-    image_data = plushie.get('image_data') # Default to existing image
-    if image:
-        new_image_data = await ImageProcessor.process_attachment(image)
-        if new_image_data:
-            image_data = new_image_data
-        else:
-            await interaction.followup.send(
-                "⚠️ New image upload failed. Keeping the old picture (if any). File size must be under 5MB.", 
-                ephemeral=True
-            )
-
-    # Use the existing plushie data to pre-fill the modal
-    modal = PlushieUpdateModal(plushie)
+        return await interaction.response.send_message(
+            f"❌ Couldn't find a plushie named **{name}** in your collection.",
+            ephemeral=True
+        )
     
-    # Store the potential new image data in the modal for on_submit handling
-    # We directly update the plushie dict before passing it to the manager
-    plushie['image_data'] = image_data
-
-    # Send modal for text updates (name, species, etc.)
-    await interaction.followup.send_modal(PlushieUpdateModal(plushie))
+    modal = PlushieScanModal(image_url=image_url, existing_plushie=plushie)
+    await interaction.response.send_modal(modal)
 
 
-@bot.tree.command(name="remove_plushie", description="Remove a plushie from your collection.")
-@app_commands.describe(name="The name of the plushie to remove")
-async def remove_plushie(interaction: discord.Interaction, name: str):
-    await interaction.response.defer(ephemeral=True, thinking=True)
+@bot.tree.command(name="embed_create", description="Create a custom embed")
+@app_commands.describe(name="Name to save this embed as")
+@is_staff_or_admin()
+async def embed_create(interaction: discord.Interaction, name: str):
+    """Create a new custom embed"""
+    # Sanitize filename
+    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    modal = EmbedBuilderModal(safe_name)
+    await interaction.response.send_modal(modal)
+
+
+@bot.tree.command(name="embed_edit", description="Edit an existing embed")
+@app_commands.describe(name="Name of the embed to edit")
+@is_staff_or_admin()
+async def embed_edit(interaction: discord.Interaction, name: str):
+    """Edit an existing embed"""
+    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    filepath = os.path.join(EMBEDS_FOLDER, f"{safe_name}.json")
     
+    if not os.path.exists(filepath):
+        return await interaction.response.send_message(
+            f"❌ Embed **{name}** not found. Use `/embed_list` to see saved embeds.",
+            ephemeral=True
+        )
+    
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            existing_data = json.load(f)
+    except Exception as e:
+        return await interaction.response.send_message(
+            f"❌ Failed to load embed: {e}",
+            ephemeral=True
+        )
+    
+    modal = EmbedBuilderModal(safe_name, existing_data)
+    await interaction.response.send_modal(modal)
+
+
+@bot.tree.command(name="embed_post", description="Post a saved embed")
+@app_commands.describe(name="Name of the embed", channel="Channel to post in")
+@is_staff_or_admin()
+async def embed_post(interaction: discord.Interaction, name: str, channel: Optional[discord.TextChannel] = None):
+    """Post a saved embed to a channel"""
+    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    filepath = os.path.join(EMBEDS_FOLDER, f"{safe_name}.json")
+    
+    if not os.path.exists(filepath):
+        return await interaction.response.send_message(
+            f"❌ Embed **{name}** not found.",
+            ephemeral=True
+        )
+    
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            embed_data = json.load(f)
+    except Exception as e:
+        return await interaction.response.send_message(
+            f"❌ Failed to load embed: {e}",
+            ephemeral=True
+        )
+    
+    # Parse color
+    color_value = discord.Color.blue()
+    if embed_data.get("color"):
+        color_str = embed_data["color"].strip().lower()
+        try:
+            if color_str.startswith('#'):
+                color_value = discord.Color(int(color_str[1:], 16))
+            elif color_str == 'red':
+                color_value = discord.Color.red()
+            elif color_str == 'green':
+                color_value = discord.Color.green()
+            elif color_str == 'blue':
+                color_value = discord.Color.blue()
+            elif color_str == 'purple':
+                color_value = discord.Color.purple()
+            elif color_str == 'gold':
+                color_value = discord.Color.gold()
+            elif color_str == 'orange':
+                color_value = discord.Color.orange()
+        except:
+            pass
+    
+    # Build embed
+    embed = discord.Embed(
+        title=embed_data.get("title") or None,
+        description=embed_data.get("description") or None,
+        color=color_value
+    )
+    
+    if embed_data.get("footer"):
+        embed.set_footer(text=embed_data["footer"])
+    
+    if embed_data.get("image"):
+        embed.set_image(url=embed_data["image"])
+    
+    # Add fields if any
+    for field in embed_data.get("fields", []):
+        embed.add_field(
+            name=field.get("name", "Field"),
+            value=field.get("value", "Value"),
+            inline=field.get("inline", False)
+        )
+    
+    target_channel = channel or interaction.channel
+    
+    try:
+        await target_channel.send(embed=embed)
+        await interaction.response.send_message(
+            f"✅ Embed posted to {target_channel.mention}",
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.response.send_message(
+            f"❌ Failed to post embed: {e}",
+            ephemeral=True
+        )
+
+
+@bot.tree.command(name="embed_list", description="List all saved embeds")
+@is_staff_or_admin()
+async def embed_list(interaction: discord.Interaction):
+    """List all saved embeds"""
+    try:
+        files = [f[:-5] for f in os.listdir(EMBEDS_FOLDER) if f.endswith('.json')]
+    except Exception as e:
+        return await interaction.response.send_message(
+            f"❌ Error reading embeds: {e}",
+            ephemeral=True
+        )
+    
+    if not files:
+        return await interaction.response.send_message(
+            "📋 No saved embeds yet. Use `/embed_create` to make one!",
+            ephemeral=True
+        )
+    
+    embed = discord.Embed(
+        title="📋 Saved Embeds",
+        description="\n".join([f"• `{name}`" for name in sorted(files)]),
+        color=discord.Color.blue()
+    )
+    embed.set_footer(text=f"Total: {len(files)} embeds")
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="embed_delete", description="Delete a saved embed")
+@app_commands.describe(name="Name of the embed to delete")
+@is_staff_or_admin()
+async def embed_delete(interaction: discord.Interaction, name: str):
+    """Delete a saved embed"""
+    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    filepath = os.path.join(EMBEDS_FOLDER, f"{safe_name}.json")
+    
+    if not os.path.exists(filepath):
+        return await interaction.response.send_message(
+            f"❌ Embed **{name}** not found.",
+            ephemeral=True
+        )
+    
+    try:
+        os.remove(filepath)
+        await interaction.response.send_message(
+            f"✅ Embed **{name}** deleted.",
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.response.send_message(
+            f"❌ Failed to delete embed: {e}",
+            ephemeral=True
+        )
+@app_commands.describe(name="Name of the plushie to remove")
+async def plushie_release(interaction: discord.Interaction, name: str):
+    """Release a plushie from your collection"""
     if PlushieManager.remove_plushie(interaction.user.id, name):
-        await interaction.followup.send(f"✅ Plushie **{name}** has been safely beamed off the ship. Goodbye, little friend! 😢", ephemeral=True)
+        embed = discord.Embed(
+            title="🧸 Plushie Released",
+            description=f"**{name}** has been sent on a solo space mission. Safe travels! 🚀",
+            color=discord.Color.orange()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
     else:
-        await interaction.followup.send(f"❌ Plushie **{name}** not found in your collection. Can't remove what isn't there.", ephemeral=True)
+        await interaction.response.send_message(
+            f"❌ Couldn't find a plushie named **{name}** in your collection.",
+            ephemeral=True
+        )
 
 
-# --- SLASH COMMANDS (FUN) ---
-
-@bot.tree.command(name="mission", description="Get a fun, simple mission for little astronauts!")
-async def mission_command(interaction: discord.Interaction):
+@bot.tree.command(name="mission_report", description="Get a mission assignment!")
+async def mission_report(interaction: discord.Interaction):
+    """Give Little Astronauts a fun mission to complete"""
     mission = MissionGenerator.get_mission()
     
     embed = discord.Embed(
-        title="🛰️ Daily Mission Briefing",
-        description=f"**Your mission, Space Cadet {interaction.user.display_name}, is to...**\n\n**{mission}**",
+        title="🚀 Mission Assignment",
+        description=f"**Mission Briefing for {interaction.user.display_name}:**\n\n{mission}",
         color=discord.Color.gold(),
         timestamp=datetime.now(timezone.utc)
     )
-    embed.set_footer(text="Good luck, and happy exploring!")
+    
+    embed.set_thumbnail(url="https://em-content.zobj.net/source/twitter/348/rocket_1f680.png")
+    embed.set_footer(text="Report back when your mission is complete! o7")
     
     await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="fuel_refill", description="Sending fuel to a crew member!")
+@bot.tree.command(name="fuel_refill", description="Send encouraging fuel to a crew member!")
 @app_commands.describe(member="The crew member who needs fuel", message="Optional personal message")
 async def fuel_refill(interaction: discord.Interaction, member: discord.Member, message: Optional[str] = None):
     """Send encouraging messages to other members"""
@@ -1087,10 +1306,8 @@ async def fuel_refill(interaction: discord.Interaction, member: discord.Member, 
 
 if __name__ == "__main__":
     if not TOKEN:
-        logger.error("DISCORD_TOKEN environment variable not set.")
-    elif not DATABASE_URL:
-        logger.error("DATABASE_URL environment variable not set. Plushie features will fail.")
-    else:
-        # Initialize tables before running the bot
-        Database.init_tables() 
-        bot.run(TOKEN)
+        logger.error("❌ DISCORD_TOKEN not found in environment variables!")
+        logger.error("Please create a .env file with: DISCORD_TOKEN=your_token_here")
+        exit(1)
+    
+    bot.run(TOKEN)
