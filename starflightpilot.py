@@ -534,7 +534,7 @@ async def backup_ship(interaction: discord.Interaction):
     BackupManager.save(data)
     await interaction.response.send_message("💾 Ship backed up.", ephemeral=False)
 
-@bot.tee.command(name="restore_ship")
+@bot.tree.command(name="restore_ship")
 @staff_only()
 async def restore_ship(interaction: discord.Interaction):
     """Restore a backup of the server structure"""
