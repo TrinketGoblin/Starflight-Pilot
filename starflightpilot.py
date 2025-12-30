@@ -60,6 +60,7 @@ logger = logging.getLogger("Starflight")
 # =========================
 
 class DatabaseManager:
+    
     @staticmethod
     def conn():
         if not DATABASE_URL:
@@ -102,6 +103,15 @@ class DatabaseManager:
                     fields JSONB DEFAULT '[]'::jsonb,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """)
+                # Inside DatabaseManager.init_db()
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS server_backups (
+                    id SERIAL PRIMARY KEY,
+                    guild_id BIGINT NOT NULL,
+                    backup_data JSONB NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 """)
                 
@@ -387,17 +397,34 @@ class BackupManager:
         return result
 
     @staticmethod
-    def save(data: Dict):
-        with open(BACKUP_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+    def save_to_db(guild_id: int, data: Dict):
+        """Saves backup to PostgreSQL instead of a file"""
+        try:
+            with DatabaseManager.conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO server_backups (guild_id, backup_data)
+                        VALUES (%s, %s)
+                    """, (guild_id, json.dumps(data)))
+                    conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Backup Save Error: {e}")
+            return False
 
     @staticmethod
-    def load():
-        if not os.path.exists(BACKUP_FILE):
-            return None
-        with open(BACKUP_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-
+    def load_from_db(guild_id: int):
+        """Fetches the latest backup from PostgreSQL"""
+        with DatabaseManager.conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT backup_data FROM server_backups 
+                    WHERE guild_id = %s 
+                    ORDER BY created_at DESC LIMIT 1
+                """, (guild_id,))
+                result = cur.fetchone()
+                return result["backup_data"] if result else None
+            
 # =========================
 # BOT
 # =========================
@@ -529,18 +556,25 @@ async def embed_delete(interaction: discord.Interaction, name: str):
 @bot.tree.command(name="backup_ship")
 @staff_only()
 async def backup_ship(interaction: discord.Interaction):
-    """Create a backup of the server structure"""
+    """Create a backup and save it to the Railway DB"""
+    await interaction.response.defer(ephemeral=True) # Give it time to process
+    
     data = await BackupManager.create_backup(interaction.guild)
-    BackupManager.save(data)
-    await interaction.response.send_message("💾 Ship backed up.", ephemeral=False)
+    if BackupManager.save_to_db(interaction.guild.id, data):
+        await interaction.followup.send("💾 Ship backed up to Railway database.", ephemeral=False)
+    else:
+        await interaction.followup.send("❌ Failed to save backup to database.", ephemeral=False)
 
 @bot.tree.command(name="restore_ship")
 @staff_only()
 async def restore_ship(interaction: discord.Interaction):
-    """Restore a backup of the server structure"""
-    data = BackupManager.load()
+    """Restore the latest backup from the Railway DB"""
+    data = BackupManager.load_from_db(interaction.guild.id)
     if not data:
-        return await interaction.response.send_message("⚠️ No ship backup found.", ephemeral=False)
+        return await interaction.response.send_message("⚠️ No ship backup found in database.", ephemeral=False)
+    
+    # Rest of your restoration logic goes here...
+    await interaction.response.send_message("🛠️ Restoration process placeholder (Logic needed).", ephemeral=False)
 
 @bot.tree.command(name="sync_tree")
 @staff_only()
