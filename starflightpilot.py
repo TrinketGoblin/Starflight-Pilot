@@ -532,7 +532,15 @@ async def backup_ship(interaction: discord.Interaction):
     """Create a backup of the server structure"""
     data = await BackupManager.create_backup(interaction.guild)
     BackupManager.save(data)
-    await interaction.response.send_message("💾 Ship backed up.", ephemeral=True)
+    await interaction.response.send_message("💾 Ship backed up.", ephemeral=False)
+
+@bot.tee.command(name="restore_ship")
+@staff_only()
+async def restore_ship(interaction: discord.Interaction):
+    """Restore a backup of the server structure"""
+    data = BackupManager.load()
+    if not data:
+        return await interaction.response.send_message("⚠️ No ship backup found.", ephemeral=False)
 
 @bot.tree.command(name="sync_tree")
 @staff_only()
