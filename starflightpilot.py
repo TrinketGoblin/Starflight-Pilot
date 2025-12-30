@@ -382,52 +382,52 @@ class BackupManager:
             data["categories"].append(cat_data)
 
         return data
-@staticmethod
+    @staticmethod
     def save_to_db(guild_id: int, data: Dict):
-        """Saves backup to PostgreSQL instead of a file"""
-        try:
-            with DatabaseManager.conn() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                        INSERT INTO server_backups (guild_id, backup_data)
-                        VALUES (%s, %s)
-                    """, (guild_id, json.dumps(data)))
-                    conn.commit()
-            return True
-        except Exception as e:
-            logger.error(f"Backup Save Error: {e}")
-            return False
-@staticmethod
-async def restore_from_data(guild: discord.Guild, data: Dict):
-        # 1. Restore Roles (Skip @everyone and managed/bot roles)
-        role_map = {} # Maps old names to new role objects
-        for r_data in data.get("roles", []):
+            """Saves backup to PostgreSQL instead of a file"""
             try:
-                new_role = await guild.create_role(
-                    name=r_data["name"],
-                    color=discord.Color(r_data["color"]),
-                    permissions=discord.Permissions(r_data["permissions"]),
-                    hoist=r_data["hoist"]
-                )
-                role_map[r_data["name"]] = new_role
+                with DatabaseManager.conn() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            INSERT INTO server_backups (guild_id, backup_data)
+                            VALUES (%s, %s)
+                        """, (guild_id, json.dumps(data)))
+                        conn.commit()
+                return True
             except Exception as e:
-                logger.error(f"Failed to restore role {r_data['name']}: {e}")
+                logger.error(f"Backup Save Error: {e}")
+                return False
+    @staticmethod
+    async def restore_from_data(guild: discord.Guild, data: Dict):
+            # 1. Restore Roles (Skip @everyone and managed/bot roles)
+            role_map = {} # Maps old names to new role objects
+            for r_data in data.get("roles", []):
+                try:
+                    new_role = await guild.create_role(
+                        name=r_data["name"],
+                        color=discord.Color(r_data["color"]),
+                        permissions=discord.Permissions(r_data["permissions"]),
+                        hoist=r_data["hoist"]
+                    )
+                    role_map[r_data["name"]] = new_role
+                except Exception as e:
+                    logger.error(f"Failed to restore role {r_data['name']}: {e}")
 
-        # 2. Restore Categories and Channels
-        for cat_data in data.get("categories", []):
-            try:
-                # Map overwrites to the new role objects we just created
-                overwrites = BackupManager.deserialize_target_overwrites(guild, cat_data["overwrites"], role_map)
-                new_cat = await guild.create_category(name=cat_data["name"], overwrites=overwrites)
+            # 2. Restore Categories and Channels
+            for cat_data in data.get("categories", []):
+                try:
+                    # Map overwrites to the new role objects we just created
+                    overwrites = BackupManager.deserialize_target_overwrites(guild, cat_data["overwrites"], role_map)
+                    new_cat = await guild.create_category(name=cat_data["name"], overwrites=overwrites)
 
-                for ch_data in cat_data.get("channels", []):
-                    ch_overwrites = BackupManager.deserialize_target_overwrites(guild, ch_data["overwrites"], role_map)
-                    if ch_data["type"] == "text":
-                        await new_cat.create_text_channel(name=ch_data["name"], overwrites=ch_overwrites)
-                    elif ch_data["type"] == "voice":
-                        await new_cat.create_voice_channel(name=ch_data["name"], overwrites=ch_overwrites)
-            except Exception as e:
-                logger.error(f"Failed to restore category/channel: {e}")
+                    for ch_data in cat_data.get("channels", []):
+                        ch_overwrites = BackupManager.deserialize_target_overwrites(guild, ch_data["overwrites"], role_map)
+                        if ch_data["type"] == "text":
+                            await new_cat.create_text_channel(name=ch_data["name"], overwrites=ch_overwrites)
+                        elif ch_data["type"] == "voice":
+                            await new_cat.create_voice_channel(name=ch_data["name"], overwrites=ch_overwrites)
+                except Exception as e:
+                    logger.error(f"Failed to restore category/channel: {e}")
 
     @staticmethod
     def serialize_overwrites(overwrites):
