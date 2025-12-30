@@ -580,8 +580,14 @@ async def restore_ship(interaction: discord.Interaction):
 @staff_only()
 async def sync_tree(interaction: discord.Interaction):
     """Sync slash commands to Discord"""
+    # 1. Defer the response immediately to prevent timeout
+    await interaction.response.defer(ephemeral=True)
+    
+    # 2. Perform the slow operation
     await bot.tree.sync()
-    await interaction.response.send_message("📡 Slash commands synced.", ephemeral=True)
+    
+    # 3. Use followup.send instead of response.send_message
+    await interaction.followup.send("📡 Slash commands synced.", ephemeral=True)
 
 # =========================
 # PLUSHIE COMMANDS
