@@ -398,7 +398,7 @@ class BackupManager:
             logger.error(f"Backup Save Error: {e}")
             return False
 @staticmethod
-    async def restore_from_data(guild: discord.Guild, data: Dict):
+async def restore_from_data(guild: discord.Guild, data: Dict):
         # 1. Restore Roles (Skip @everyone and managed/bot roles)
         role_map = {} # Maps old names to new role objects
         for r_data in data.get("roles", []):
