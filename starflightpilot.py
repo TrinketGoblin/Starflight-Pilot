@@ -1,15 +1,27 @@
 # =========================
+
 # STARFLIGHT PILOT BOT
+
 # =========================
 
+
+
 import discord
+
 from discord.ext import commands
+
 from discord import app_commands
 
+
+
 import os
+
 import json
+
 import logging
+
 import random
+
 import io
 
 import re
