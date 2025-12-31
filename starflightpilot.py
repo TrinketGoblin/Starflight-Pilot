@@ -35,6 +35,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 BACKUP_FILE = "ship_backup.json"
 MISSIONS_FILE = "missions.json"
 ENCOURAGEMENTS_FILE = "encouragements.json"
+SPACE_FACTS_FILE = "space_facts.json"
 
 STAFF_ROLE_ID = 1454538884682612940
 
@@ -797,7 +798,7 @@ async def plushie_remove(interaction: discord.Interaction, name: str):
     else:
         await interaction.response.send_message("❌ Plushie not found.", ephemeral=True)
 
-#=========================
+# =========================
 # MISSION & ENCOURAGEMENT SYSTEM
 # =========================
 
@@ -823,6 +824,16 @@ class MissionManager:
             return ["is sending you positive vibes! ✨"]
 
     @staticmethod
+    def load_space_facts() -> List[str]:
+        """Load space facts from JSON file"""
+        try:
+            with open(SPACE_FACTS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load space facts: {e}")
+            return ["Space is really big!"]
+
+    @staticmethod
     def get_random_mission() -> str:
         """Get a random mission"""
         missions = MissionManager.load_missions()
@@ -833,6 +844,12 @@ class MissionManager:
         """Get a random encouragement"""
         encouragements = MissionManager.load_encouragements()
         return random.choice(encouragements)
+    
+    @staticmethod
+    def get_random_space_fact() -> str:
+        """Get a random space fact"""
+        facts = MissionManager.load_space_facts()
+        return random.choice(facts)
 
 
 @bot.tree.command(name="mission")
@@ -1063,20 +1080,7 @@ async def crew_manifest(interaction: discord.Interaction):
 @bot.tree.command(name="space_fact")
 async def space_fact(interaction: discord.Interaction):
     """Learn a random space fact!"""
-    facts = [
-        "A day on Venus is longer than its year! It takes 243 Earth days to rotate once.",
-        "Neutron stars can spin at 600 rotations per second!",
-        "One teaspoon of a neutron star would weigh 6 billion tons!",
-        "The Sun accounts for 99.86% of the mass in our solar system.",
-        "There are more stars in the universe than grains of sand on Earth!",
-        "Saturn's rings are only about 30 feet thick!",
-        "A year on Mercury is just 88 Earth days long.",
-        "The footprints on the Moon will be there for 100 million years.",
-        "The International Space Station orbits Earth every 90 minutes!",
-        "Jupiter's Great Red Spot is a storm that's been raging for over 300 years!",
-    ]
-    
-    fact = random.choice(facts)
+    fact = MissionManager.get_random_space_fact()
     
     embed = discord.Embed(
         title="🔭 Space Fact",
@@ -1095,4 +1099,4 @@ async def space_fact(interaction: discord.Interaction):
 if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("DISCORD_TOKEN missing")
-    bot.run(TOKEN) 
+    bot.run(TOKEN) STARFLIGHT PILOT BOT
