@@ -1099,4 +1099,4 @@ async def space_fact(interaction: discord.Interaction):
 if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("DISCORD_TOKEN missing")
-    bot.run(TOKEN) STARFLIGHT PILOT BOT
+    bot.run(TOKEN)
