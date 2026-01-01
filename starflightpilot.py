@@ -83,7 +83,28 @@ class DatabasePool:
 # =========================
 # DATABASE INITIALIZATION
 # =========================
+def migrate_db():
+    """Run database migrations"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor() as cur:
+            # Add image_data column if it doesn't exist
+            cur.execute("""
+                DO $$ 
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='plushies' AND column_name='image_data'
+                    ) THEN
+                        ALTER TABLE plushies ADD COLUMN image_data BYTEA;
+                    END IF;
+                END $$;
+            """)
+    logger.info("Database migrations completed")
 
+def init_db():
+    """Initialize all database tables"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor() as cur:
 def init_db():
     """Initialize all database tables"""
     with DatabasePool.get_conn() as conn:
@@ -137,6 +158,7 @@ def init_db():
                 ON server_backups (guild_id, created_at DESC)
             """)
     
+    migrate_db()  # Add this line
     logger.info("Database tables initialized")
 
 # =========================
