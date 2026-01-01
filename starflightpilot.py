@@ -105,10 +105,6 @@ def init_db():
     """Initialize all database tables"""
     with DatabasePool.get_conn() as conn:
         with conn.cursor() as cur:
-def init_db():
-    """Initialize all database tables"""
-    with DatabasePool.get_conn() as conn:
-        with conn.cursor() as cur:
             # Plushies table
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS plushies (
