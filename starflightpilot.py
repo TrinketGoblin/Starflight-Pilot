@@ -1188,7 +1188,7 @@ async def leave(interaction: discord.Interaction):
 
 @bot.tree.command(name="play")
 async def play(interaction: discord.Interaction, file: Optional[discord.Attachment] = None, url: Optional[str] = None):
-    """Play an MP3 file or URL (file must be under 25MB for Discord limits)"""
+    """Play an MP3 file or URL (file must be under 50MB for Discord limits)"""
     if not file and not url:
         return await interaction.response.send_message("❌ Please provide an MP3 file or URL!", ephemeral=True)
     
@@ -1205,9 +1205,9 @@ async def play(interaction: discord.Interaction, file: Optional[discord.Attachme
     
     try:
         if file:
-            # Check file size (Discord limit is 25MB for most servers)
-            if file.size > 25 * 1024 * 1024:
-                return await interaction.followup.send("❌ File is too large! Maximum size is 25MB.")
+            # Check file size (Discord limit is 50MB for most servers)
+            if file.size > 50 * 1024 * 1024:
+                return await interaction.followup.send("❌ File is too large! Maximum size is 50MB.")
             
             # Download the file to a temporary location
             if not file.filename.endswith('.mp3'):
