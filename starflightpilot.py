@@ -20,6 +20,11 @@ import aiohttp
 from collections import deque
 import tempfile
 
+FFMPEG_OPTIONS = {
+    "before_options": "-nostdin -loglevel panic",
+    "options": "-vn"
+}
+
 # =========================
 # CONFIGURATION
 # =========================
@@ -859,15 +864,13 @@ class MusicPlayer:
         self.queue.append(song)
     
     async def play_next(self):
-        """Play the next song in queue"""
-        # Clean up previous temporary file
         if self.current_song and self.current_song.is_file:
             try:
                 if os.path.exists(self.current_song.source):
                     os.remove(self.current_song.source)
             except Exception as e:
-                logger.error(f"Error removing temp file: {e}")
-        
+                logger.error(f"Temp file cleanup error: {e}")
+
         if self.loop and self.current_song:
             song = self.current_song
         elif self.queue:
@@ -875,31 +878,30 @@ class MusicPlayer:
         else:
             self.current_song = None
             return
-        
+
         self.current_song = song
-        
+
+        FFMPEG_OPTIONS = {
+            "before_options": "-nostdin -loglevel panic",
+            "options": "-vn"
+        }
+
         try:
-            if song.is_file:
-                # Play from file
-                audio_source = discord.FFmpegPCMAudio(song.source)
-            else:
-                # Play from URL
-                audio_source = discord.FFmpegPCMAudio(song.source)
-            
-            # Apply volume
-            audio_source = discord.PCMVolumeTransformer(audio_source, volume=self.volume)
-            
-            # Play with callback to play next song
+            source = discord.FFmpegPCMAudio(song.source, **FFMPEG_OPTIONS)
+            source = discord.PCMVolumeTransformer(source, volume=self.volume)
+
+            loop = asyncio.get_running_loop()
+
             self.voice_client.play(
-                audio_source,
-                after=lambda e: asyncio.run_coroutine_threadsafe(
-                    self.play_next(), self.voice_client.loop
+                source,
+                after=lambda e: loop.call_soon_threadsafe(
+                    asyncio.create_task, self.play_next()
                 )
             )
         except Exception as e:
-            logger.error(f"Error playing audio: {e}")
+            logger.error(f"Playback error: {e}")
             await self.play_next()
-    
+        
     def pause(self):
         """Pause playback"""
         if self.voice_client and self.voice_client.is_playing():
@@ -1219,7 +1221,9 @@ async def play(interaction: discord.Interaction, file: Optional[discord.Attachme
             
             # Download the file
             await file.save(temp_path)
-            
+            if not os.path.exists(temp_path) or os.path.getsize(temp_path) == 0:
+                return await interaction.followup.send("❌ Failed to save audio file.")
+
             song = Song(
                 source=temp_path,
                 title=file.filename,
