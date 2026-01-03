@@ -3,3 +3,5 @@ python-dotenv
 Pillow
 psycopg2-binary
 aiohttp
+ffmpeg
+PyNaCl
