@@ -83,6 +83,45 @@ class DatabasePool:
 # =========================
 # DATABASE INITIALIZATION
 # =========================
+
+def init_default_achievements(cur):
+    """Create default space-themed achievements"""
+    achievements = [
+        # Mission achievements
+        ("first_mission", "First Mission", "Complete your first space mission", "🎯", "explorer", "missions_completed", 1, 5, False),
+        ("mission_specialist", "Mission Specialist", "Complete 25 missions", "🛸", "explorer", "missions_completed", 25, 50, False),
+        ("veteran_pilot", "Veteran Pilot", "Complete 100 missions", "👨‍🚀", "explorer", "missions_completed", 100, 200, False),
+        ("mission_master", "Mission Master", "Complete 250 missions", "🏅", "explorer", "missions_completed", 250, 500, False),
+        
+        # Encouragement achievements
+        ("first_contact", "First Contact", "Send your first encouragement", "📡", "social", "encouragements_given", 1, 5, False),
+        ("ambassador", "Ambassador", "Encourage 20 crew members", "🤝", "social", "encouragements_given", 20, 40, False),
+        ("galactic_friend", "Galactic Friend", "Encourage 50 crew members", "💫", "social", "encouragements_given", 50, 100, False),
+        ("beloved_crew", "Beloved Crew", "Receive 15 encouragements", "⭐", "social", "encouragements_received", 15, 30, False),
+        
+        # Plushie achievements
+        ("first_companion", "First Companion", "Register your first plushie", "🧸", "collector", "plushies_registered", 1, 5, False),
+        ("plushie_fleet", "Plushie Fleet", "Register 10 plushies", "🎪", "collector", "plushies_registered", 10, 50, False),
+        ("curator", "Curator", "Register 25 plushies", "🏛️", "collector", "plushies_registered", 25, 100, False),
+        
+        # Knowledge achievements
+        ("space_cadet", "Space Cadet", "Learn 10 space facts", "📚", "scholar", "facts_learned", 10, 20, False),
+        ("astronomer", "Astronomer", "Learn 50 space facts", "🔭", "scholar", "facts_learned", 50, 100, False),
+        ("astrophysicist", "Astrophysicist", "Learn 100 space facts", "👩‍🔬", "scholar", "facts_learned", 100, 200, False),
+        
+        # Exploration achievements
+        ("planet_hunter", "Planet Hunter", "Discover 10 planets", "🪐", "explorer", "planets_discovered", 10, 20, False),
+        ("spacewalker", "Spacewalker", "Take 15 spacewalks", "🧑‍🚀", "explorer", "spacewalks_taken", 15, 30, False),
+        
+        # Hidden achievements
+        ("secret_astronaut", "Secret Astronaut", "Mission Control knows your call sign", "🎖️", "hidden", "missions_completed", 500, 1000, True),
+        ("cosmic_legend", "Cosmic Legend", "A true space pioneer", "🌌", "hidden", "encouragements_given", 100, 500, True),
+    ]
+    
+    for ach in achievements:
+        cur.execute("""INSERT INTO achievements (id, name, description, icon, category, requirement_type, requirement_count, points, hidden)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING""", ach)
+
 def migrate_db():
     """Run database migrations"""
     with DatabasePool.get_conn() as conn:
@@ -153,9 +192,125 @@ def init_db():
                 CREATE INDEX IF NOT EXISTS idx_backups_guild_created 
                 ON server_backups (guild_id, created_at DESC)
             """)
+            
+            # Achievement tables
+            cur.execute("""CREATE TABLE IF NOT EXISTS achievements (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                icon TEXT,
+                category TEXT,
+                requirement_type TEXT,
+                requirement_count INTEGER DEFAULT 1,
+                points INTEGER DEFAULT 10,
+                hidden BOOLEAN DEFAULT FALSE
+            )""")
+            
+            cur.execute("""CREATE TABLE IF NOT EXISTS user_achievements (
+                user_id BIGINT,
+                achievement_id TEXT,
+                progress INTEGER DEFAULT 0,
+                unlocked BOOLEAN DEFAULT FALSE,
+                unlocked_at TIMESTAMPTZ,
+                PRIMARY KEY (user_id, achievement_id)
+            )""")
+            
+            cur.execute("""CREATE TABLE IF NOT EXISTS user_stats (
+                user_id BIGINT PRIMARY KEY,
+                missions_completed INTEGER DEFAULT 0,
+                encouragements_given INTEGER DEFAULT 0,
+                encouragements_received INTEGER DEFAULT 0,
+                plushies_registered INTEGER DEFAULT 0,
+                facts_learned INTEGER DEFAULT 0,
+                planets_discovered INTEGER DEFAULT 0,
+                spacewalks_taken INTEGER DEFAULT 0,
+                total_points INTEGER DEFAULT 0
+            )""")
+            
+            # Mission tracking table
+            cur.execute("""CREATE TABLE IF NOT EXISTS active_missions (
+                user_id BIGINT PRIMARY KEY,
+                mission_text TEXT NOT NULL,
+                started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            )""")
+            
+            # Initialize default achievements
+            init_default_achievements(cur)
     
-    migrate_db()  # Add this line
+    migrate_db()
     logger.info("Database tables initialized")
+
+# =========================
+# ACHIEVEMENT SYSTEM
+# =========================
+
+class AchievementManager:
+    @staticmethod
+    async def check_and_award(user_id: int, stat_type: str, new_value: int, channel: discord.TextChannel = None):
+        """Check if user unlocked any achievements and award them"""
+        unlocked = []
+        
+        with DatabasePool.get_conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # Get relevant achievements for this stat type
+                cur.execute("""SELECT a.* FROM achievements a
+                              LEFT JOIN user_achievements ua ON a.id = ua.achievement_id AND ua.user_id = %s
+                              WHERE a.requirement_type = %s AND (ua.unlocked IS NULL OR ua.unlocked = FALSE)""",
+                           (user_id, stat_type))
+                achievements = cur.fetchall()
+                
+                for ach in achievements:
+                    if new_value >= ach['requirement_count']:
+                        # Unlock achievement
+                        cur.execute("""INSERT INTO user_achievements (user_id, achievement_id, progress, unlocked, unlocked_at)
+                                      VALUES (%s, %s, %s, TRUE, NOW())
+                                      ON CONFLICT (user_id, achievement_id) 
+                                      DO UPDATE SET unlocked = TRUE, unlocked_at = NOW(), progress = EXCLUDED.progress""",
+                                   (user_id, ach['id'], new_value))
+                        
+                        # Add points
+                        cur.execute("""INSERT INTO user_stats (user_id, total_points) VALUES (%s, %s)
+                                      ON CONFLICT (user_id) DO UPDATE SET total_points = user_stats.total_points + EXCLUDED.total_points""",
+                                   (user_id, ach['points']))
+                        
+                        unlocked.append(ach)
+                    else:
+                        # Update progress
+                        cur.execute("""INSERT INTO user_achievements (user_id, achievement_id, progress)
+                                      VALUES (%s, %s, %s)
+                                      ON CONFLICT (user_id, achievement_id) DO UPDATE SET progress = EXCLUDED.progress""",
+                                   (user_id, ach['id'], new_value))
+        
+        # Send notifications for unlocked achievements
+        if unlocked and channel:
+            for ach in unlocked:
+                await AchievementManager.send_unlock_notification(channel, user_id, ach)
+        
+        return unlocked
+    
+    @staticmethod
+    async def send_unlock_notification(channel: discord.TextChannel, user_id: int, achievement: dict):
+        """Send a notification when achievement is unlocked"""
+        user = await channel.guild.fetch_member(user_id)
+        embed = discord.Embed(
+            title=f"🎊 Achievement Unlocked!",
+            description=f"{achievement['icon']} **{achievement['name']}**\n*{achievement['description']}*\n\n+{achievement['points']} points!",
+            color=discord.Color.gold()
+        )
+        embed.set_thumbnail(url=user.display_avatar.url)
+        embed.set_footer(text=f"Congratulations, {user.display_name}!")
+        await channel.send(embed=embed)
+    
+    @staticmethod
+    def increment_stat(user_id: int, stat_name: str, amount: int = 1):
+        """Increment a user stat and return new value"""
+        with DatabasePool.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"""INSERT INTO user_stats (user_id, {stat_name}) VALUES (%s, %s)
+                               ON CONFLICT (user_id) DO UPDATE SET {stat_name} = user_stats.{stat_name} + EXCLUDED.{stat_name}
+                               RETURNING {stat_name}""",
+                           (user_id, amount))
+                return cur.fetchone()[0]
 
 # =========================
 # PLUSHIE MANAGER
@@ -603,7 +758,11 @@ class StarflightBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        await self.tree.sync()
+        try:
+            synced = await self.tree.sync()
+            logger.info(f"✅ Synced {len(synced)} commands globally")
+        except Exception as e:
+            logger.error(f"❌ Command sync failed: {e}")
 
 bot = StarflightBot()
 
@@ -611,6 +770,7 @@ bot = StarflightBot()
 async def on_ready():
     init_db()
     logger.info(f"🚀 Starflight Pilot online as {bot.user}")
+    logger.info(f"📋 Registered commands: {[cmd.name for cmd in bot.tree.get_commands()]}")
 
 # =========================
 # MODAL CLASSES
@@ -648,9 +808,11 @@ class PlushieModal(discord.ui.Modal, title="Register Plushie"):
     personality = discord.ui.TextInput(label="Personality", style=discord.TextStyle.paragraph)
     description = discord.ui.TextInput(label="Description", style=discord.TextStyle.paragraph)
 
-    def __init__(self, image_url: Optional[str]):
+    def __init__(self, image_url: Optional[str], user_id: int, channel):
         super().__init__()
         self.image_url = image_url
+        self.user_id = user_id
+        self.channel = channel
 
     async def on_submit(self, interaction: discord.Interaction):
         image = None
@@ -669,6 +831,10 @@ class PlushieModal(discord.ui.Modal, title="Register Plushie"):
         
         if PlushieManager.create(interaction.user.id, data, image):
             await interaction.response.send_message("🧸 Plushie registered!", ephemeral=True)
+            
+            # Track stats and check achievements
+            plushie_count = AchievementManager.increment_stat(self.user_id, "plushies_registered")
+            await AchievementManager.check_and_award(self.user_id, "plushies_registered", plushie_count, self.channel)
         else:
             await interaction.response.send_message("❌ Failed to register plushie.", ephemeral=True)
 
@@ -714,6 +880,123 @@ class PlushieEditModal(discord.ui.Modal, title="Edit Plushie"):
             await interaction.response.send_message("✅ Plushie updated!", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Update failed.", ephemeral=True)
+
+# =========================
+# ACHIEVEMENT COMMANDS
+# =========================
+
+@bot.tree.command(name="achievements")
+async def achievements(interaction: discord.Interaction, member: Optional[discord.Member] = None):
+    """View your achievements"""
+    target = member or interaction.user
+    
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Get user stats
+            cur.execute("SELECT * FROM user_stats WHERE user_id = %s", (target.id,))
+            stats = cur.fetchone()
+            
+            # Get unlocked achievements
+            cur.execute("""SELECT a.*, ua.unlocked_at FROM achievements a
+                          INNER JOIN user_achievements ua ON a.id = ua.achievement_id
+                          WHERE ua.user_id = %s AND ua.unlocked = TRUE
+                          ORDER BY ua.unlocked_at DESC""", (target.id,))
+            unlocked = cur.fetchall()
+            
+            # Get locked achievements (non-hidden)
+            cur.execute("""SELECT a.*, COALESCE(ua.progress, 0) as progress FROM achievements a
+                          LEFT JOIN user_achievements ua ON a.id = ua.achievement_id AND ua.user_id = %s
+                          WHERE (ua.unlocked IS NULL OR ua.unlocked = FALSE) AND a.hidden = FALSE
+                          ORDER BY a.category, a.requirement_count""", (target.id,))
+            locked = cur.fetchall()
+    
+    total_points = stats['total_points'] if stats else 0
+    unlocked_count = len(unlocked)
+    
+    embed = discord.Embed(
+        title=f"🏆 {target.display_name}'s Achievements",
+        description=f"**Total Points:** {total_points} 🌟\n**Unlocked:** {unlocked_count} achievements\n",
+        color=discord.Color.gold()
+    )
+    embed.set_thumbnail(url=target.display_avatar.url)
+    
+    # Show unlocked achievements
+    if unlocked:
+        unlocked_text = "\n".join([f"{a['icon']} **{a['name']}** - {a['description']} (+{a['points']})" for a in unlocked[:5]])
+        embed.add_field(name="✅ Recent Unlocks", value=unlocked_text, inline=False)
+    
+    # Show locked achievements
+    if locked:
+        locked_text = "\n".join([f"🔒 **{a['name']}** - {a['progress']}/{a['requirement_count']}" for a in locked[:5]])
+        embed.add_field(name="🎯 In Progress", value=locked_text, inline=False)
+    
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="leaderboard")
+async def leaderboard(interaction: discord.Interaction):
+    """View top pilots in the space station"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""SELECT user_id, total_points FROM user_stats 
+                          ORDER BY total_points DESC LIMIT 10""")
+            leaders = cur.fetchall()
+    
+    if not leaders:
+        return await interaction.response.send_message("🏆 The leaderboard is empty!")
+    
+    embed = discord.Embed(
+        title="🏆 Space Station Leaderboard",
+        description="*The most accomplished pilots*",
+        color=discord.Color.gold()
+    )
+    
+    medals = ["🥇", "🥈", "🥉"]
+    leaderboard_text = ""
+    
+    for i, leader in enumerate(leaders):
+        try:
+            user = await interaction.guild.fetch_member(leader['user_id'])
+            medal = medals[i] if i < 3 else f"{i+1}."
+            leaderboard_text += f"{medal} **{user.display_name}** - {leader['total_points']} points\n"
+        except:
+            continue
+    
+    embed.description = leaderboard_text
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="profile")
+async def profile(interaction: discord.Interaction, member: Optional[discord.Member] = None):
+    """View your space pilot profile"""
+    target = member or interaction.user
+    
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM user_stats WHERE user_id = %s", (target.id,))
+            stats = cur.fetchone()
+            
+            cur.execute("""SELECT COUNT(*) as count FROM user_achievements 
+                          WHERE user_id = %s AND unlocked = TRUE""", (target.id,))
+            ach_count = cur.fetchone()['count']
+    
+    if not stats:
+        return await interaction.response.send_message(f"{target.display_name} hasn't started their pilot journey yet!")
+    
+    embed = discord.Embed(
+        title=f"👨‍🚀 {target.display_name}'s Pilot Profile",
+        color=discord.Color.blue()
+    )
+    embed.set_thumbnail(url=target.display_avatar.url)
+    embed.add_field(name="🌟 Total Points", value=str(stats['total_points']), inline=True)
+    embed.add_field(name="🏆 Achievements", value=str(ach_count), inline=True)
+    embed.add_field(name="🎯 Missions Completed", value=str(stats['missions_completed']), inline=True)
+    embed.add_field(name="📡 Encouragements Given", value=str(stats['encouragements_given']), inline=True)
+    embed.add_field(name="💫 Encouragements Received", value=str(stats['encouragements_received']), inline=True)
+    embed.add_field(name="🧸 Plushies Registered", value=str(stats['plushies_registered']), inline=True)
+    embed.add_field(name="📚 Facts Learned", value=str(stats['facts_learned']), inline=True)
+    embed.add_field(name="🪐 Planets Discovered", value=str(stats['planets_discovered']), inline=True)
+    embed.add_field(name="🧑‍🚀 Spacewalks Taken", value=str(stats['spacewalks_taken']), inline=True)
+    
+    await interaction.response.send_message(embed=embed)
 
 # =========================
 # EMBED COMMANDS
@@ -801,8 +1084,12 @@ async def restore_ship(interaction: discord.Interaction):
 async def sync_tree(interaction: discord.Interaction):
     """Sync slash commands to Discord"""
     await interaction.response.defer(ephemeral=True)
-    await bot.tree.sync()
-    await interaction.followup.send("📡 Slash commands synced.", ephemeral=True)
+    try:
+        synced = await bot.tree.sync()
+        guild_synced = await bot.tree.sync(guild=interaction.guild)
+        await interaction.followup.send(f"📡 Commands synced! Global: {len(synced)}, Guild: {len(guild_synced)}", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Sync error: {e}", ephemeral=True)
 
 # =========================
 # PLUSHIE COMMANDS
@@ -811,7 +1098,7 @@ async def sync_tree(interaction: discord.Interaction):
 @bot.tree.command(name="plushie_scan")
 async def plushie_scan(interaction: discord.Interaction, photo: Optional[discord.Attachment] = None):
     """Register a new plushie to your collection"""
-    await interaction.response.send_modal(PlushieModal(photo.url if photo else None))
+    await interaction.response.send_modal(PlushieModal(photo.url if photo else None, interaction.user.id, interaction.channel))
 
 @bot.tree.command(name="plushie_edit")
 async def plushie_edit(interaction: discord.Interaction, name: str, photo: Optional[discord.Attachment] = None):
@@ -882,13 +1169,70 @@ async def mission(interaction: discord.Interaction):
     missions = load_json_file(MISSIONS_FILE, ["🚀 Take a break and stretch for 30 seconds!"])
     mission_text = random.choice(missions)
     
+    # Store active mission
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""INSERT INTO active_missions (user_id, mission_text, started_at)
+                          VALUES (%s, %s, NOW())
+                          ON CONFLICT (user_id) DO UPDATE SET 
+                          mission_text = EXCLUDED.mission_text, started_at = NOW()""",
+                       (interaction.user.id, mission_text))
+    
     embed = discord.Embed(
         title="🎯 New Mission Assigned!",
-        description=mission_text,
+        description=f"{mission_text}\n\n*Use `/mission_report` when complete!*",
         color=discord.Color.blue()
     )
     embed.set_footer(text=f"Mission Control • {interaction.user.display_name}")
     await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="mission_report")
+async def mission_report(interaction: discord.Interaction):
+    """Mark your current mission as complete"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM active_missions WHERE user_id = %s", (interaction.user.id,))
+            active = cur.fetchone()
+            
+            if not active:
+                return await interaction.response.send_message("❌ You don't have an active mission. Use `/mission` to get one!", ephemeral=True)
+            
+            # Delete active mission
+            cur.execute("DELETE FROM active_missions WHERE user_id = %s", (interaction.user.id,))
+    
+    embed = discord.Embed(
+        title="✅ Mission Complete!",
+        description=f"**Mission:** {active['mission_text']}\n\n*Excellent work, pilot!*",
+        color=discord.Color.green()
+    )
+    embed.set_footer(text=f"Completed by {interaction.user.display_name}")
+    await interaction.response.send_message(embed=embed)
+    
+    # Track stats and check achievements
+    mission_count = AchievementManager.increment_stat(interaction.user.id, "missions_completed")
+    await AchievementManager.check_and_award(interaction.user.id, "missions_completed", mission_count, interaction.channel)
+
+@bot.tree.command(name="mission_status")
+async def mission_status(interaction: discord.Interaction):
+    """Check your current active mission"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM active_missions WHERE user_id = %s", (interaction.user.id,))
+            active = cur.fetchone()
+    
+    if not active:
+        return await interaction.response.send_message("📋 You don't have an active mission. Use `/mission` to get one!", ephemeral=True)
+    
+    time_elapsed = datetime.now(timezone.utc) - active['started_at']
+    minutes = int(time_elapsed.total_seconds() / 60)
+    
+    embed = discord.Embed(
+        title="📋 Active Mission Status",
+        description=f"**Mission:** {active['mission_text']}\n\n**Time Elapsed:** {minutes} minutes",
+        color=discord.Color.blue()
+    )
+    embed.set_footer(text=f"Use /mission_report when complete!")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="encourage")
 async def encourage(interaction: discord.Interaction, member: Optional[discord.Member] = None):
@@ -905,6 +1249,13 @@ async def encourage(interaction: discord.Interaction, member: Optional[discord.M
     embed.set_thumbnail(url=target.display_avatar.url)
     embed.set_footer(text=f"To: {target.display_name}")
     await interaction.response.send_message(embed=embed)
+    
+    # Track stats and check achievements
+    given_count = AchievementManager.increment_stat(interaction.user.id, "encouragements_given")
+    received_count = AchievementManager.increment_stat(target.id, "encouragements_received")
+    
+    await AchievementManager.check_and_award(interaction.user.id, "encouragements_given", given_count, interaction.channel)
+    await AchievementManager.check_and_award(target.id, "encouragements_received", received_count, interaction.channel)
 
 @bot.tree.command(name="space_fact")
 async def space_fact(interaction: discord.Interaction):
@@ -919,6 +1270,10 @@ async def space_fact(interaction: discord.Interaction):
     )
     embed.set_footer(text="Mission Control Educational Program")
     await interaction.response.send_message(embed=embed)
+    
+    # Track stats and check achievements
+    facts_count = AchievementManager.increment_stat(interaction.user.id, "facts_learned")
+    await AchievementManager.check_and_award(interaction.user.id, "facts_learned", facts_count, interaction.channel)
 
 @bot.tree.command(name="daily_mission")
 @is_staff()
@@ -1027,6 +1382,10 @@ async def planet(interaction: discord.Interaction):
     )
     embed.set_footer(text=f"Discovered by {interaction.user.display_name}")
     await interaction.response.send_message(embed=embed)
+    
+    # Track stats and check achievements
+    planets_count = AchievementManager.increment_stat(interaction.user.id, "planets_discovered")
+    await AchievementManager.check_and_award(interaction.user.id, "planets_discovered", planets_count, interaction.channel)
 
 @bot.tree.command(name="spacewalk")
 async def spacewalk(interaction: discord.Interaction):
@@ -1052,6 +1411,10 @@ async def spacewalk(interaction: discord.Interaction):
     )
     embed.set_footer(text=f"Astronaut: {interaction.user.display_name}")
     await interaction.response.send_message(embed=embed)
+    
+    # Track stats and check achievements
+    spacewalks_count = AchievementManager.increment_stat(interaction.user.id, "spacewalks_taken")
+    await AchievementManager.check_and_award(interaction.user.id, "spacewalks_taken", spacewalks_count, interaction.channel)
 
 @bot.tree.command(name="stardate")
 async def stardate(interaction: discord.Interaction):
