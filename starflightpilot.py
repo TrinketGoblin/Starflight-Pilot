@@ -17,10 +17,18 @@ from psycopg2.pool import SimpleConnectionPool
 from dotenv import load_dotenv
 from PIL import Image
 import aiohttp
+from collections import deque
+import tempfile
 
 # =========================
 # CONFIGURATION
 # =========================
+
+# IMPORTANT: FFmpeg must be installed for music playback to work
+# Install FFmpeg:
+# - Ubuntu/Debian: sudo apt install ffmpeg
+# - Windows: Download from https://ffmpeg.org/download.html
+# - macOS: brew install ffmpeg
 
 load_dotenv()
 
@@ -772,6 +780,162 @@ async def on_ready():
     logger.info(f"🚀 Starflight Pilot online as {bot.user}")
     logger.info(f"📋 Registered commands: {[cmd.name for cmd in bot.tree.get_commands()]}")
 
+@bot.event
+async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+    """Auto-disconnect if bot is alone in voice channel"""
+    if member.id != bot.user.id:
+        return
+    
+    # If bot left a channel
+    if before.channel and not after.channel:
+        player = music_players.get(member.guild.id)
+        if player:
+            await player.leave()
+
+async def cleanup_music_players():
+    """Clean up all music players on shutdown"""
+    for player in music_players.values():
+        await player.leave()
+    music_players.clear()
+    logger.info("🧹 Music players cleaned up")
+
+# =========================
+# MUSIC PLAYER SYSTEM
+# =========================
+
+class Song:
+    """Represents a song in the queue"""
+    def __init__(self, source: str, title: str, requester: discord.Member, is_file: bool = False):
+        self.source = source
+        self.title = title
+        self.requester = requester
+        self.is_file = is_file
+
+class MusicPlayer:
+    """Manages music playback for a guild"""
+    def __init__(self, guild: discord.Guild):
+        self.guild = guild
+        self.voice_client: Optional[discord.VoiceClient] = None
+        self.queue = deque()
+        self.current_song: Optional[Song] = None
+        self.volume = 0.5
+        self.loop = False
+        
+    async def join(self, channel: discord.VoiceChannel):
+        """Join a voice channel"""
+        if self.voice_client and self.voice_client.is_connected():
+            await self.voice_client.move_to(channel)
+        else:
+            self.voice_client = await channel.connect()
+        return self.voice_client
+    
+    async def leave(self):
+        """Leave the voice channel"""
+        # Clean up current temp file
+        if self.current_song and self.current_song.is_file:
+            try:
+                if os.path.exists(self.current_song.source):
+                    os.remove(self.current_song.source)
+            except Exception as e:
+                logger.error(f"Error removing temp file: {e}")
+        
+        # Clean up queued temp files
+        for song in self.queue:
+            if song.is_file:
+                try:
+                    if os.path.exists(song.source):
+                        os.remove(song.source)
+                except Exception as e:
+                    logger.error(f"Error removing temp file: {e}")
+        
+        if self.voice_client:
+            await self.voice_client.disconnect()
+            self.voice_client = None
+            self.current_song = None
+            self.queue.clear()
+    
+    def add_song(self, song: Song):
+        """Add a song to the queue"""
+        self.queue.append(song)
+    
+    async def play_next(self):
+        """Play the next song in queue"""
+        # Clean up previous temporary file
+        if self.current_song and self.current_song.is_file:
+            try:
+                if os.path.exists(self.current_song.source):
+                    os.remove(self.current_song.source)
+            except Exception as e:
+                logger.error(f"Error removing temp file: {e}")
+        
+        if self.loop and self.current_song:
+            song = self.current_song
+        elif self.queue:
+            song = self.queue.popleft()
+        else:
+            self.current_song = None
+            return
+        
+        self.current_song = song
+        
+        try:
+            if song.is_file:
+                # Play from file
+                audio_source = discord.FFmpegPCMAudio(song.source)
+            else:
+                # Play from URL
+                audio_source = discord.FFmpegPCMAudio(song.source)
+            
+            # Apply volume
+            audio_source = discord.PCMVolumeTransformer(audio_source, volume=self.volume)
+            
+            # Play with callback to play next song
+            self.voice_client.play(
+                audio_source,
+                after=lambda e: asyncio.run_coroutine_threadsafe(
+                    self.play_next(), self.voice_client.loop
+                )
+            )
+        except Exception as e:
+            logger.error(f"Error playing audio: {e}")
+            await self.play_next()
+    
+    def pause(self):
+        """Pause playback"""
+        if self.voice_client and self.voice_client.is_playing():
+            self.voice_client.pause()
+    
+    def resume(self):
+        """Resume playback"""
+        if self.voice_client and self.voice_client.is_paused():
+            self.voice_client.resume()
+    
+    def stop(self):
+        """Stop playback"""
+        if self.voice_client:
+            self.voice_client.stop()
+            self.current_song = None
+    
+    def skip(self):
+        """Skip current song"""
+        if self.voice_client and self.voice_client.is_playing():
+            self.voice_client.stop()
+    
+    def set_volume(self, volume: float):
+        """Set playback volume (0.0 to 1.0)"""
+        self.volume = max(0.0, min(1.0, volume))
+        if self.voice_client and self.voice_client.source:
+            self.voice_client.source.volume = self.volume
+
+# Global music players dictionary
+music_players: Dict[int, MusicPlayer] = {}
+
+def get_music_player(guild: discord.Guild) -> MusicPlayer:
+    """Get or create a music player for a guild"""
+    if guild.id not in music_players:
+        music_players[guild.id] = MusicPlayer(guild)
+    return music_players[guild.id]
+
 # =========================
 # MODAL CLASSES
 # =========================
@@ -997,6 +1161,220 @@ async def profile(interaction: discord.Interaction, member: Optional[discord.Mem
     embed.add_field(name="🧑‍🚀 Spacewalks Taken", value=str(stats['spacewalks_taken']), inline=True)
     
     await interaction.response.send_message(embed=embed)
+
+# =========================
+# MUSIC COMMANDS
+# =========================
+
+@bot.tree.command(name="join")
+async def join(interaction: discord.Interaction):
+    """Join your voice channel"""
+    if not interaction.user.voice:
+        return await interaction.response.send_message("❌ You need to be in a voice channel!", ephemeral=True)
+    
+    player = get_music_player(interaction.guild)
+    await player.join(interaction.user.voice.channel)
+    await interaction.response.send_message(f"🎵 Joined {interaction.user.voice.channel.mention}")
+
+@bot.tree.command(name="leave")
+async def leave(interaction: discord.Interaction):
+    """Leave the voice channel"""
+    player = get_music_player(interaction.guild)
+    if not player.voice_client:
+        return await interaction.response.send_message("❌ Not in a voice channel!", ephemeral=True)
+    
+    await player.leave()
+    await interaction.response.send_message("👋 Left the voice channel")
+
+@bot.tree.command(name="play")
+async def play(interaction: discord.Interaction, file: Optional[discord.Attachment] = None, url: Optional[str] = None):
+    """Play an MP3 file or URL (file must be under 25MB for Discord limits)"""
+    if not file and not url:
+        return await interaction.response.send_message("❌ Please provide an MP3 file or URL!", ephemeral=True)
+    
+    if not interaction.user.voice:
+        return await interaction.response.send_message("❌ You need to be in a voice channel!", ephemeral=True)
+    
+    await interaction.response.defer()
+    
+    player = get_music_player(interaction.guild)
+    
+    # Join voice channel if not connected
+    if not player.voice_client:
+        await player.join(interaction.user.voice.channel)
+    
+    try:
+        if file:
+            # Check file size (Discord limit is 25MB for most servers)
+            if file.size > 25 * 1024 * 1024:
+                return await interaction.followup.send("❌ File is too large! Maximum size is 25MB.")
+            
+            # Download the file to a temporary location
+            if not file.filename.endswith('.mp3'):
+                return await interaction.followup.send("❌ Please upload an MP3 file!")
+            
+            # Create a temporary file
+            temp_dir = tempfile.gettempdir()
+            temp_path = os.path.join(temp_dir, f"{interaction.id}_{file.filename}")
+            
+            # Download the file
+            await file.save(temp_path)
+            
+            song = Song(
+                source=temp_path,
+                title=file.filename,
+                requester=interaction.user,
+                is_file=True
+            )
+        else:
+            # Use URL directly
+            song = Song(
+                source=url,
+                title=url.split('/')[-1] or "Audio Stream",
+                requester=interaction.user,
+                is_file=False
+            )
+        
+        # Add to queue
+        was_playing = player.voice_client.is_playing() if player.voice_client else False
+        player.add_song(song)
+        
+        if not was_playing:
+            await player.play_next()
+            embed = discord.Embed(
+                title="🎵 Now Playing",
+                description=f"**{song.title}**\nRequested by {song.requester.mention}",
+                color=discord.Color.green()
+            )
+        else:
+            embed = discord.Embed(
+                title="📋 Added to Queue",
+                description=f"**{song.title}**\nRequested by {song.requester.mention}\nPosition: {len(player.queue)}",
+                color=discord.Color.blue()
+            )
+        
+        await interaction.followup.send(embed=embed)
+        
+    except Exception as e:
+        logger.error(f"Error playing audio: {e}")
+        await interaction.followup.send(f"❌ Error playing audio: {e}")
+
+@bot.tree.command(name="pause")
+async def pause(interaction: discord.Interaction):
+    """Pause the current song"""
+    player = get_music_player(interaction.guild)
+    if not player.voice_client or not player.voice_client.is_playing():
+        return await interaction.response.send_message("❌ Nothing is playing!", ephemeral=True)
+    
+    player.pause()
+    await interaction.response.send_message("⏸️ Paused playback")
+
+@bot.tree.command(name="resume")
+async def resume(interaction: discord.Interaction):
+    """Resume the current song"""
+    player = get_music_player(interaction.guild)
+    if not player.voice_client or not player.voice_client.is_paused():
+        return await interaction.response.send_message("❌ Nothing is paused!", ephemeral=True)
+    
+    player.resume()
+    await interaction.response.send_message("▶️ Resumed playback")
+
+@bot.tree.command(name="stop")
+async def stop(interaction: discord.Interaction):
+    """Stop playback and clear the queue"""
+    player = get_music_player(interaction.guild)
+    if not player.voice_client:
+        return await interaction.response.send_message("❌ Not playing anything!", ephemeral=True)
+    
+    player.queue.clear()
+    player.stop()
+    await interaction.response.send_message("⏹️ Stopped playback and cleared queue")
+
+@bot.tree.command(name="skip")
+async def skip(interaction: discord.Interaction):
+    """Skip the current song"""
+    player = get_music_player(interaction.guild)
+    if not player.voice_client or not player.voice_client.is_playing():
+        return await interaction.response.send_message("❌ Nothing is playing!", ephemeral=True)
+    
+    player.skip()
+    await interaction.response.send_message("⏭️ Skipped to next song")
+
+@bot.tree.command(name="queue")
+async def queue(interaction: discord.Interaction):
+    """View the current music queue"""
+    player = get_music_player(interaction.guild)
+    
+    if not player.current_song and not player.queue:
+        return await interaction.response.send_message("📋 Queue is empty!", ephemeral=True)
+    
+    embed = discord.Embed(
+        title="🎵 Music Queue",
+        color=discord.Color.blue()
+    )
+    
+    if player.current_song:
+        embed.add_field(
+            name="🎵 Now Playing",
+            value=f"**{player.current_song.title}**\nRequested by {player.current_song.requester.mention}",
+            inline=False
+        )
+    
+    if player.queue:
+        queue_text = "\n".join([
+            f"{i+1}. **{song.title}** - {song.requester.mention}"
+            for i, song in enumerate(list(player.queue)[:10])
+        ])
+        if len(player.queue) > 10:
+            queue_text += f"\n...and {len(player.queue) - 10} more"
+        
+        embed.add_field(
+            name=f"📋 Up Next ({len(player.queue)} songs)",
+            value=queue_text,
+            inline=False
+        )
+    
+    embed.set_footer(text=f"Volume: {int(player.volume * 100)}% | Loop: {'On' if player.loop else 'Off'}")
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="nowplaying")
+async def nowplaying(interaction: discord.Interaction):
+    """Show what's currently playing"""
+    player = get_music_player(interaction.guild)
+    
+    if not player.current_song:
+        return await interaction.response.send_message("❌ Nothing is playing!", ephemeral=True)
+    
+    embed = discord.Embed(
+        title="🎵 Now Playing",
+        description=f"**{player.current_song.title}**",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Requested by", value=player.current_song.requester.mention)
+    embed.add_field(name="Volume", value=f"{int(player.volume * 100)}%")
+    embed.add_field(name="Loop", value="On" if player.loop else "Off")
+    
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="volume")
+async def volume(interaction: discord.Interaction, level: int):
+    """Set playback volume (0-100)"""
+    if not 0 <= level <= 100:
+        return await interaction.response.send_message("❌ Volume must be between 0 and 100!", ephemeral=True)
+    
+    player = get_music_player(interaction.guild)
+    player.set_volume(level / 100)
+    await interaction.response.send_message(f"🔊 Volume set to {level}%")
+
+@bot.tree.command(name="loop")
+async def loop(interaction: discord.Interaction):
+    """Toggle loop mode for current song"""
+    player = get_music_player(interaction.guild)
+    player.loop = not player.loop
+    
+    status = "enabled" if player.loop else "disabled"
+    emoji = "🔁" if player.loop else "➡️"
+    await interaction.response.send_message(f"{emoji} Loop mode {status}")
 
 # =========================
 # EMBED COMMANDS
@@ -1574,4 +1952,11 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("DISCORD_TOKEN environment variable not set")
-    bot.run(TOKEN)
+    
+    try:
+        bot.run(TOKEN)
+    except KeyboardInterrupt:
+        logger.info("🛑 Bot shutdown requested")
+    finally:
+        # Clean up music players
+        asyncio.run(cleanup_music_players())
