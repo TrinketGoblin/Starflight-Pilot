@@ -29,12 +29,6 @@ FFMPEG_OPTIONS = {
 # CONFIGURATION
 # =========================
 
-# IMPORTANT: FFmpeg must be installed for music playback to work
-# Install FFmpeg:
-# - Ubuntu/Debian: sudo apt install ffmpeg
-# - Windows: Download from https://ffmpeg.org/download.html
-# - macOS: brew install ffmpeg
-
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -45,6 +39,9 @@ STAFF_ROLE_ID = int(os.getenv("STAFF_ROLE_ID", "1454538884682612940"))
 MISSIONS_FILE = "missions.json"
 ENCOURAGEMENTS_FILE = "encouragements.json"
 SPACE_FACTS_FILE = "space_facts.json"
+
+# Image directory for astronaut clipart
+IMAGES_DIR = "astronauts"
 
 # Space-themed announcement styling
 ANNOUNCEMENT_CONFIG = {
@@ -62,6 +59,32 @@ ANNOUNCEMENT_CONFIG = {
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("StarflightPilot")
+
+# =========================
+# IMAGE HELPER
+# =========================
+
+def get_astronaut_image(filename: str) -> Optional[discord.File]:
+    """Get an astronaut clipart image as a Discord File"""
+    try:
+        filepath = os.path.join(IMAGES_DIR, filename)
+        if os.path.exists(filepath):
+            return discord.File(filepath, filename=filename)
+    except Exception as e:
+        logger.error(f"Failed to load image {filename}: {e}")
+    return None
+
+def get_random_astronaut_image() -> Optional[discord.File]:
+    """Get a random astronaut image from the directory"""
+    try:
+        if os.path.exists(IMAGES_DIR):
+            images = [f for f in os.listdir(IMAGES_DIR) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            if images:
+                filename = random.choice(images)
+                return discord.File(os.path.join(IMAGES_DIR, filename), filename=filename)
+    except Exception as e:
+        logger.error(f"Failed to get random image: {e}")
+    return None
 
 # =========================
 # DATABASE CONNECTION POOL
@@ -97,6 +120,24 @@ class DatabasePool:
 # DATABASE INITIALIZATION
 # =========================
 
+# Shop items configuration
+SHOP_ITEMS = {
+    "fuel": {"name": "Fuel Cell", "description": "Powers your ship's engines", "price": 50, "emoji": "⛽", "type": "consumable", "rarity": 1},
+    "repair_kit": {"name": "Repair Kit", "description": "Fixes ship damage", "price": 75, "emoji": "🔧", "type": "consumable", "rarity": 1},
+    "stardust": {"name": "Stardust", "description": "Rare cosmic material", "price": 200, "emoji": "✨", "type": "material", "rarity": 2},
+    "alien_artifact": {"name": "Alien Artifact", "description": "Mysterious ancient technology", "price": 500, "emoji": "🗿", "type": "collectible", "rarity": 3},
+    "quantum_core": {"name": "Quantum Core", "description": "Advanced ship component", "price": 1000, "emoji": "💎", "type": "upgrade", "rarity": 4},
+    "nebula_crystal": {"name": "Nebula Crystal", "description": "Beautiful and valuable", "price": 750, "emoji": "🔮", "type": "collectible", "rarity": 3},
+    "plasma_cannon": {"name": "Plasma Cannon", "description": "Powerful weapon upgrade", "price": 1500, "emoji": "🔫", "type": "upgrade", "rarity": 4},
+    "shield_booster": {"name": "Shield Booster", "description": "Enhanced protection", "price": 1200, "emoji": "🛡️", "type": "upgrade", "rarity": 4},
+}
+
+SHIP_UPGRADES = {
+    "engine": {"name": "Engine", "emoji": "🚀", "base_cost": 100},
+    "weapon": {"name": "Weapons", "emoji": "🔫", "base_cost": 150},
+    "shield": {"name": "Shields", "emoji": "🛡️", "base_cost": 125},
+}
+
 def init_default_achievements(cur):
     """Create default space-themed achievements"""
     achievements = [
@@ -115,7 +156,7 @@ def init_default_achievements(cur):
         # Plushie achievements
         ("first_companion", "First Companion", "Register your first plushie", "🧸", "collector", "plushies_registered", 1, 5, False),
         ("plushie_fleet", "Plushie Fleet", "Register 10 plushies", "🎪", "collector", "plushies_registered", 10, 50, False),
-        ("curator", "Curator", "Register 25 plushies", "🏛️", "collector", "plushies_registered", 25, 100, False),
+        ("curator", "Curator", "Register 25 plushies", "🛍️", "collector", "plushies_registered", 25, 100, False),
         
         # Knowledge achievements
         ("space_cadet", "Space Cadet", "Learn 10 space facts", "📚", "scholar", "facts_learned", 10, 20, False),
@@ -126,14 +167,37 @@ def init_default_achievements(cur):
         ("planet_hunter", "Planet Hunter", "Discover 10 planets", "🪐", "explorer", "planets_discovered", 10, 20, False),
         ("spacewalker", "Spacewalker", "Take 15 spacewalks", "🧑‍🚀", "explorer", "spacewalks_taken", 15, 30, False),
         
+        # Economy achievements
+        ("first_purchase", "First Purchase", "Buy your first item", "💰", "merchant", "items_purchased", 1, 5, False),
+        ("savvy_shopper", "Savvy Shopper", "Purchase 25 items", "🛍️", "merchant", "items_purchased", 25, 50, False),
+        ("collector_supreme", "Collector Supreme", "Own 50+ items in inventory", "📦", "merchant", "total_items_owned", 50, 100, False),
+        ("ship_engineer", "Ship Engineer", "Upgrade your ship 10 times", "🔧", "engineer", "ship_upgrades", 10, 75, False),
+        ("master_engineer", "Master Engineer", "Upgrade your ship 25 times", "⚙️", "engineer", "ship_upgrades", 25, 150, False),
+        
         # Hidden achievements
         ("secret_astronaut", "Secret Astronaut", "Mission Control knows your call sign", "🎖️", "hidden", "missions_completed", 500, 1000, True),
         ("cosmic_legend", "Cosmic Legend", "A true space pioneer", "🌌", "hidden", "encouragements_given", 100, 500, True),
+        ("millionaire", "Space Millionaire", "Accumulate 10,000 credits", "💎", "hidden", "total_credits_earned", 10000, 2000, True),
     ]
     
     for ach in achievements:
         cur.execute("""INSERT INTO achievements (id, name, description, icon, category, requirement_type, requirement_count, points, hidden)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING""", ach)
+
+def init_shop_items(cur):
+    """Populate shop items table"""
+    for item_id, data in SHOP_ITEMS.items():
+        cur.execute("""
+            INSERT INTO shop_items (id, name, description, price, emoji, type, rarity)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET 
+                name = EXCLUDED.name,
+                description = EXCLUDED.description,
+                price = EXCLUDED.price,
+                emoji = EXCLUDED.emoji,
+                type = EXCLUDED.type,
+                rarity = EXCLUDED.rarity
+        """, (item_id, data['name'], data['description'], data['price'], data['emoji'], data['type'], data['rarity']))
 
 def migrate_db():
     """Run database migrations"""
@@ -148,6 +212,40 @@ def migrate_db():
                         WHERE table_name='plushies' AND column_name='image_data'
                     ) THEN
                         ALTER TABLE plushies ADD COLUMN image_data BYTEA;
+                    END IF;
+                END $$;
+            """)
+            
+            # Add new economy stat columns
+            cur.execute("""
+                DO $$ 
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='user_stats' AND column_name='items_purchased'
+                    ) THEN
+                        ALTER TABLE user_stats ADD COLUMN items_purchased INTEGER DEFAULT 0;
+                    END IF;
+                    
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='user_stats' AND column_name='ship_upgrades'
+                    ) THEN
+                        ALTER TABLE user_stats ADD COLUMN ship_upgrades INTEGER DEFAULT 0;
+                    END IF;
+                    
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='user_stats' AND column_name='total_items_owned'
+                    ) THEN
+                        ALTER TABLE user_stats ADD COLUMN total_items_owned INTEGER DEFAULT 0;
+                    END IF;
+                    
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='user_stats' AND column_name='total_credits_earned'
+                    ) THEN
+                        ALTER TABLE user_stats ADD COLUMN total_credits_earned INTEGER DEFAULT 0;
                     END IF;
                 END $$;
             """)
@@ -237,6 +335,10 @@ def init_db():
                 facts_learned INTEGER DEFAULT 0,
                 planets_discovered INTEGER DEFAULT 0,
                 spacewalks_taken INTEGER DEFAULT 0,
+                items_purchased INTEGER DEFAULT 0,
+                ship_upgrades INTEGER DEFAULT 0,
+                total_items_owned INTEGER DEFAULT 0,
+                total_credits_earned INTEGER DEFAULT 0,
                 total_points INTEGER DEFAULT 0
             )""")
             
@@ -246,6 +348,40 @@ def init_db():
                 mission_text TEXT NOT NULL,
                 started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
             )""")
+            
+            # Ships table
+            cur.execute("""CREATE TABLE IF NOT EXISTS ships (
+                user_id BIGINT PRIMARY KEY,
+                name TEXT NOT NULL,
+                ship_class TEXT DEFAULT 'Scout',
+                engine_level INTEGER DEFAULT 1,
+                weapon_level INTEGER DEFAULT 1,
+                shield_level INTEGER DEFAULT 1,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            )""")
+            
+            # Inventory table
+            cur.execute("""CREATE TABLE IF NOT EXISTS inventory (
+                user_id BIGINT,
+                item_id TEXT,
+                quantity INTEGER DEFAULT 1,
+                acquired_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, item_id)
+            )""")
+            
+            # Shop items table (for reference)
+            cur.execute("""CREATE TABLE IF NOT EXISTS shop_items (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                price INTEGER NOT NULL,
+                emoji TEXT,
+                type TEXT,
+                rarity INTEGER DEFAULT 1
+            )""")
+            
+            # Populate shop items
+            init_shop_items(cur)
             
             # Initialize default achievements
             init_default_achievements(cur)
@@ -286,6 +422,11 @@ class AchievementManager:
                                       ON CONFLICT (user_id) DO UPDATE SET total_points = user_stats.total_points + EXCLUDED.total_points""",
                                    (user_id, ach['points']))
                         
+                        # Track total credits earned
+                        cur.execute("""INSERT INTO user_stats (user_id, total_credits_earned) VALUES (%s, %s)
+                                      ON CONFLICT (user_id) DO UPDATE SET total_credits_earned = user_stats.total_credits_earned + EXCLUDED.total_credits_earned""",
+                                   (user_id, ach['points']))
+                        
                         unlocked.append(ach)
                     else:
                         # Update progress
@@ -299,6 +440,15 @@ class AchievementManager:
             for ach in unlocked:
                 await AchievementManager.send_unlock_notification(channel, user_id, ach)
         
+        # Also check total_credits_earned achievements after awarding points (but avoid recursion)
+        if unlocked and stat_type != "total_credits_earned":
+            with DatabasePool.get_conn() as conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    cur.execute("SELECT total_credits_earned FROM user_stats WHERE user_id = %s", (user_id,))
+                    stats = cur.fetchone()
+                    if stats:
+                        await AchievementManager.check_and_award(user_id, "total_credits_earned", stats['total_credits_earned'], channel)
+        
         return unlocked
     
     @staticmethod
@@ -306,13 +456,20 @@ class AchievementManager:
         """Send a notification when achievement is unlocked"""
         user = await channel.guild.fetch_member(user_id)
         embed = discord.Embed(
-            title=f"🎊 Achievement Unlocked!",
+            title="🎊 Achievement Unlocked!",
             description=f"{achievement['icon']} **{achievement['name']}**\n*{achievement['description']}*\n\n+{achievement['points']} points!",
             color=discord.Color.gold()
         )
         embed.set_thumbnail(url=user.display_avatar.url)
         embed.set_footer(text=f"Congratulations, {user.display_name}!")
-        await channel.send(embed=embed)
+        
+        # Try to attach a random astronaut image
+        astro_image = get_random_astronaut_image()
+        if astro_image:
+            embed.set_image(url=f"attachment://{astro_image.filename}")
+            await channel.send(embed=embed, file=astro_image)
+        else:
+            await channel.send(embed=embed)
     
     @staticmethod
     def increment_stat(user_id: int, stat_name: str, amount: int = 1):
@@ -323,7 +480,113 @@ class AchievementManager:
                                ON CONFLICT (user_id) DO UPDATE SET {stat_name} = user_stats.{stat_name} + EXCLUDED.{stat_name}
                                RETURNING {stat_name}""",
                            (user_id, amount))
-                return cur.fetchone()[0]
+                new_value = cur.fetchone()[0]
+                
+                # Also track total credits earned when points are added
+                if stat_name == "total_points" and amount > 0:
+                    cur.execute("""INSERT INTO user_stats (user_id, total_credits_earned) VALUES (%s, %s)
+                                   ON CONFLICT (user_id) DO UPDATE SET total_credits_earned = user_stats.total_credits_earned + EXCLUDED.total_credits_earned""",
+                               (user_id, amount))
+                
+                return new_value
+
+# =========================
+# SPACE ECONOMY & SHIPS
+# =========================
+
+def calculate_upgrade_cost(current_level: int, base_cost: int) -> int:
+    """Calculate cost for next upgrade level"""
+    return base_cost * (current_level + 1)
+
+class ShipManager:
+    """Manages personal starship operations"""
+    
+    @staticmethod
+    def create_ship(user_id: int, name: str) -> bool:
+        try:
+            with DatabasePool.get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO ships (user_id, name, ship_class, engine_level, weapon_level, shield_level)
+                        VALUES (%s, %s, 'Scout', 1, 1, 1)
+                    """, (user_id, name))
+            return True
+        except Exception as e:
+            logger.error(f"Failed to create ship: {e}")
+            return False
+    
+    @staticmethod
+    def get_ship(user_id: int) -> Optional[Dict]:
+        with DatabasePool.get_conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT * FROM ships WHERE user_id = %s", (user_id,))
+                return cur.fetchone()
+    
+    @staticmethod
+    def upgrade_ship(user_id: int, component: str) -> bool:
+        try:
+            with DatabasePool.get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(f"""
+                        UPDATE ships SET {component}_level = {component}_level + 1
+                        WHERE user_id = %s
+                        RETURNING {component}_level
+                    """, (user_id,))
+                    result = cur.fetchone()
+                    return result is not None
+        except Exception as e:
+            logger.error(f"Failed to upgrade ship: {e}")
+            return False
+
+class InventoryManager:
+    """Manages user inventory and items"""
+    
+    @staticmethod
+    def add_item(user_id: int, item_id: str, quantity: int = 1) -> bool:
+        try:
+            with DatabasePool.get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO inventory (user_id, item_id, quantity)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (user_id, item_id) 
+                        DO UPDATE SET quantity = inventory.quantity + EXCLUDED.quantity
+                    """, (user_id, item_id, quantity))
+            return True
+        except Exception as e:
+            logger.error(f"Failed to add item: {e}")
+            return False
+    
+    @staticmethod
+    def remove_item(user_id: int, item_id: str, quantity: int = 1) -> bool:
+        try:
+            with DatabasePool.get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        UPDATE inventory SET quantity = quantity - %s
+                        WHERE user_id = %s AND item_id = %s AND quantity >= %s
+                        RETURNING quantity
+                    """, (quantity, user_id, item_id, quantity))
+                    result = cur.fetchone()
+                    if result and result[0] == 0:
+                        cur.execute("DELETE FROM inventory WHERE user_id = %s AND item_id = %s", (user_id, item_id))
+                    return result is not None
+        except Exception as e:
+            logger.error(f"Failed to remove item: {e}")
+            return False
+    
+    @staticmethod
+    def get_inventory(user_id: int) -> List[Dict]:
+        with DatabasePool.get_conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT i.item_id, i.quantity, si.name, si.description, si.emoji, si.rarity
+                    FROM inventory i
+                    JOIN shop_items si ON i.item_id = si.id
+                    WHERE i.user_id = %s
+                    ORDER BY si.rarity DESC, si.name
+                """, (user_id,))
+                return cur.fetchall()
 
 # =========================
 # PLUSHIE MANAGER
@@ -757,7 +1020,6 @@ def is_staff():
         await interaction.response.send_message("⛔ Staff only.", ephemeral=True)
         return False
     return app_commands.check(predicate)
-
 # =========================
 # BOT SETUP
 # =========================
@@ -803,6 +1065,16 @@ async def cleanup_music_players():
         await player.leave()
     music_players.clear()
     logger.info("🧹 Music players cleaned up")
+
+VALID_IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp")
+
+def get_astronaut_image(filename: str):
+    if not filename or not filename.lower().endswith(VALID_IMAGE_EXTS):
+        return None
+    path = os.path.join(IMAGES_DIR, filename)
+    if not os.path.exists(path):
+        return None
+    return discord.File(path, filename=filename)
 
 # =========================
 # MUSIC PLAYER SYSTEM
@@ -1931,6 +2203,180 @@ async def userinfo(interaction: discord.Interaction, member: Optional[discord.Me
         embed.add_field(name=f"Roles [{len(roles)}]", value=" ".join(roles), inline=False)
     
     await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="shop")
+async def shop(interaction: discord.Interaction):
+    """View available shop items"""
+    embed = discord.Embed(
+        title="🛒 Space Station Shop",
+        description="Spend credits to upgrade your journey",
+        color=discord.Color.blue()
+    )
+
+    for item_id, item in SHOP_ITEMS.items():
+        embed.add_field(
+            name=f"{item['emoji']} {item['name']} — {item['price']}💳",
+            value=item["description"],
+            inline=False
+        )
+
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="buy")
+async def buy(interaction: discord.Interaction, item_id: str, quantity: int = 1):
+    """Buy an item from the shop"""
+    item = SHOP_ITEMS.get(item_id)
+    if not item:
+        return await interaction.response.send_message("❌ Item not found.", ephemeral=True)
+
+    cost = item["price"] * max(1, quantity)
+
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT total_points FROM user_stats WHERE user_id = %s",
+                (interaction.user.id,)
+            )
+            row = cur.fetchone()
+            balance = row[0] if row else 0
+
+            if balance < cost:
+                return await interaction.response.send_message(
+                    f"❌ You need {cost} credits but only have {balance}.",
+                    ephemeral=True
+                )
+
+            cur.execute(
+                """INSERT INTO user_stats (user_id, total_points)
+                   VALUES (%s, %s)
+                   ON CONFLICT (user_id)
+                   DO UPDATE SET total_points = user_stats.total_points - %s""",
+                (interaction.user.id, balance - cost, cost)
+            )
+
+    InventoryManager.add_item(interaction.user.id, item_id, quantity)
+
+    purchased = AchievementManager.increment_stat(
+        interaction.user.id, "items_purchased", quantity
+    )
+    await AchievementManager.check_and_award(
+        interaction.user.id, "items_purchased", purchased, interaction.channel
+    )
+
+    await interaction.response.send_message(
+        f"✅ Purchased **{quantity}× {item['name']}** for {cost} credits!"
+    )
+
+@bot.tree.command(name="inventory")
+async def inventory(interaction: discord.Interaction):
+    """View your inventory"""
+    items = InventoryManager.get_inventory(interaction.user.id)
+    if not items:
+        return await interaction.response.send_message("📦 Your inventory is empty.")
+
+    embed = discord.Embed(
+        title="🎒 Your Inventory",
+        color=discord.Color.green()
+    )
+
+    for item in items:
+        embed.add_field(
+            name=f"{item['emoji']} {item['name']} ×{item['quantity']}",
+            value=item["description"],
+            inline=False
+        )
+
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="ship")
+async def ship(interaction: discord.Interaction):
+    """View your ship"""
+    ship = ShipManager.get_ship(interaction.user.id)
+    if not ship:
+        return await interaction.response.send_message(
+            "🚀 You don't have a ship yet. Use `/ship_create`."
+        )
+
+    embed = discord.Embed(
+        title=f"🚀 {ship['name']}",
+        description=f"Class: **{ship['ship_class']}**",
+        color=discord.Color.orange()
+    )
+
+    embed.add_field(name="🚀 Engine", value=f"Level {ship['engine_level']}")
+    embed.add_field(name="🔫 Weapons", value=f"Level {ship['weapon_level']}")
+    embed.add_field(name="🛡️ Shields", value=f"Level {ship['shield_level']}")
+
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="ship_create")
+async def ship_create(interaction: discord.Interaction, name: str):
+    """Create your first ship"""
+    if ShipManager.get_ship(interaction.user.id):
+        return await interaction.response.send_message(
+            "❌ You already own a ship.",
+            ephemeral=True
+        )
+
+    if ShipManager.create_ship(interaction.user.id, name):
+        await interaction.response.send_message(f"🚀 Ship **{name}** commissioned!")
+    else:
+        await interaction.response.send_message("❌ Failed to create ship.")
+
+@bot.tree.command(name="ship_upgrade")
+async def ship_upgrade(interaction: discord.Interaction, component: str):
+    """Upgrade a ship component"""
+    component = component.lower()
+    upgrade = SHIP_UPGRADES.get(component)
+
+    if not upgrade:
+        return await interaction.response.send_message(
+            "❌ Invalid component. Choose engine, weapon, or shield.",
+            ephemeral=True
+        )
+
+    ship = ShipManager.get_ship(interaction.user.id)
+    if not ship:
+        return await interaction.response.send_message(
+            "❌ You don't own a ship.",
+            ephemeral=True
+        )
+
+    level = ship[f"{component}_level"]
+    cost = calculate_upgrade_cost(level, upgrade["base_cost"])
+
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT total_points FROM user_stats WHERE user_id = %s",
+                (interaction.user.id,)
+            )
+            balance = cur.fetchone()[0]
+
+            if balance < cost:
+                return await interaction.response.send_message(
+                    f"❌ Upgrade costs {cost}, you have {balance}.",
+                    ephemeral=True
+                )
+
+            cur.execute(
+                "UPDATE user_stats SET total_points = total_points - %s WHERE user_id = %s",
+                (cost, interaction.user.id)
+            )
+
+    if ShipManager.upgrade_ship(interaction.user.id, component):
+        upgraded = AchievementManager.increment_stat(
+            interaction.user.id, "ship_upgrades"
+        )
+        await AchievementManager.check_and_award(
+            interaction.user.id, "ship_upgrades", upgraded, interaction.channel
+        )
+
+        await interaction.response.send_message(
+            f"⚙️ {upgrade['emoji']} **{upgrade['name']} upgraded to Level {level + 1}!**"
+        )
+    else:
+        await interaction.response.send_message("❌ Failed to upgrade ship.")
 
 # =========================
 # ERROR HANDLING
