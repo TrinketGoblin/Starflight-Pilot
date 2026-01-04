@@ -1368,6 +1368,7 @@ async def achievements(interaction: discord.Interaction, member: Optional[discor
         locked_text = "\n".join([f"🔒 **{a['name']}** - {a['progress']}/{a['requirement_count']}" for a in locked[:5]])
         embed.add_field(name="🎯 In Progress", value=locked_text, inline=False)
     
+    embed.set_footer(text="Shop & Achievement system by Starflight Pilot Bot")
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="leaderboard")
@@ -1434,6 +1435,26 @@ async def profile(interaction: discord.Interaction, member: Optional[discord.Mem
     embed.add_field(name="🪐 Planets Discovered", value=str(stats['planets_discovered']), inline=True)
     embed.add_field(name="🧑‍🚀 Spacewalks Taken", value=str(stats['spacewalks_taken']), inline=True)
     
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="balance")
+async def balance(interaction: discord.Interaction, member: Optional[discord.Member] = None):
+    """Check your or another user's credit balance."""
+    target = member or interaction.user
+
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT total_points FROM user_stats WHERE user_id = %s", (target.id,))
+            stats = cur.fetchone()
+
+    balance = stats['total_points'] if stats else 0
+
+    embed = discord.Embed(
+        title=f"💰 {target.display_name}'s Credit Balance",
+        description=f"You have **{balance}** credits.",
+        color=discord.Color.green()
+    )
+    embed.set_thumbnail(url=target.display_avatar.url)
     await interaction.response.send_message(embed=embed)
 
 # =========================
