@@ -379,15 +379,38 @@ def init_db():
                 type TEXT,
                 rarity INTEGER DEFAULT 1
             )""")
+            # Moderator applications table
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS mod_applications (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                username TEXT NOT NULL,
+                age TEXT NOT NULL,
+                timezone TEXT NOT NULL,
+                experience TEXT NOT NULL,
+                why_mod TEXT NOT NULL,
+                scenarios TEXT NOT NULL,
+                availability TEXT NOT NULL,
+                additional TEXT,
+                status TEXT DEFAULT 'pending',
+                submitted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                reviewed_by BIGINT,
+                reviewed_at TIMESTAMPTZ
+            )""")
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_applications_user_status 
+            ON mod_applications (user_id, status, submitted_at DESC
+            )""")
             
-            # Populate shop items
-            init_shop_items(cur)
-            
-            # Initialize default achievements
-            init_default_achievements(cur)
+        # Populate shop items
+        init_shop_items(cur)
+        
+        # Initialize default achievements
+        init_default_achievements(cur)
     
     migrate_db()
     logger.info("Database tables initialized")
+
 
 # =========================
 # ACHIEVEMENT SYSTEM
@@ -1318,6 +1341,133 @@ class PlushieEditModal(discord.ui.Modal, title="Edit Plushie"):
             await interaction.response.send_message("✅ Plushie updated!", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Update failed.", ephemeral=True)
+class ModApplicationModal(discord.ui.Modal, title="Moderator Application"):
+    age = discord.ui.TextInput(
+        label="Age",
+        placeholder="How old are you?",
+        max_length=3
+    )
+    timezone = discord.ui.TextInput(
+        label="Timezone",
+        placeholder="What timezone are you in? (e.g., EST, PST, GMT)",
+        max_length=50
+    )
+    experience = discord.ui.TextInput(
+        label="Moderation Experience",
+        placeholder="Describe any previous moderation experience",
+        style=discord.TextStyle.paragraph,
+        max_length=500
+    )
+    why_mod = discord.ui.TextInput(
+        label="Why do you want to be a moderator?",
+        style=discord.TextStyle.paragraph,
+        max_length=500
+    )
+    scenarios = discord.ui.TextInput(
+        label="How would you handle conflict?",
+        placeholder="Describe how you'd handle a heated argument between members",
+        style=discord.TextStyle.paragraph,
+        max_length=500
+    )
+
+    def __init__(self):
+        super().__init__()
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # Follow-up modal for additional questions
+        await interaction.response.send_modal(ModApplicationModal2(
+            self.age.value,
+            self.timezone.value,
+            self.experience.value,
+            self.why_mod.value,
+            self.scenarios.value
+        ))
+
+class ModApplicationModal2(discord.ui.Modal, title="Moderator Application (Part 2)"):
+    availability = discord.ui.TextInput(
+        label="Availability",
+        placeholder="When are you typically online? (days/times)",
+        style=discord.TextStyle.paragraph,
+        max_length=300
+    )
+    additional = discord.ui.TextInput(
+        label="Anything else we should know?",
+        placeholder="Optional: Share anything else relevant",
+        style=discord.TextStyle.paragraph,
+        required=False,
+        max_length=500
+    )
+
+    def __init__(self, age: str, timezone: str, experience: str, why_mod: str, scenarios: str):
+        super().__init__()
+        self.age = age
+        self.timezone = timezone
+        self.experience = experience
+        self.why_mod = why_mod
+        self.scenarios = scenarios
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # Check if user has a pending application
+        with DatabasePool.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id FROM mod_applications 
+                    WHERE user_id = %s AND status = 'pending'
+                """, (interaction.user.id,))
+                existing = cur.fetchone()
+                
+                if existing:
+                    return await interaction.response.send_message(
+                        "🚫 You already have a pending moderator application. Please wait for a response from staff.",
+                        ephemeral=True
+                    )
+                
+                # Save application
+                cur.execute("""
+                    INSERT INTO mod_applications 
+                    (user_id, username, age, timezone, experience, why_mod, scenarios, availability, additional)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    interaction.user.id,
+                    str(interaction.user),
+                    self.age,
+                    self.timezone,
+                    self.experience,
+                    self.why_mod,
+                    self.scenarios,
+                    self.availability.value,
+                    self.additional.value or "N/A"
+                ))
+        
+        # Send confirmation to user
+        embed = discord.Embed(
+            title="✅ Application Submitted!",
+            description="Thank you for applying to be a moderator for the Starflight Pilot crew!",
+            color=discord.Color.green()
+        )
+        embed.add_field(
+            name="What's Next?",
+            value="Our staff team will review your application and get back to you soon. You'll receive a DM with our decision.",
+            inline=False
+        )
+        embed.set_footer(text="May the stars guide you! 🚀")
+        
+        await interaction.response.send_message(embed=embed)
+        
+        # Notify staff in a staff channel (optional - you can configure this)
+        # Find a staff notifications channel or log channel
+        staff_channel = discord.utils.get(interaction.guild.channels, name="staff-notifications")
+        if staff_channel:
+            staff_embed = discord.Embed(
+                title="📋 New Moderator Application",
+                description=f"**{interaction.user.mention}** has submitted a moderator application!",
+                color=discord.Color.blue()
+            )
+            staff_embed.add_field(name="Applicant", value=interaction.user.mention, inline=True)
+            staff_embed.add_field(name="User ID", value=str(interaction.user.id), inline=True)
+            staff_embed.set_thumbnail(url=interaction.user.display_avatar.url)
+            staff_embed.set_footer(text="Use /mod_applications to review")
+            await staff_channel.send(embed=staff_embed)
 
 # =========================
 # ACHIEVEMENT COMMANDS
@@ -2398,6 +2548,289 @@ async def ship_upgrade(interaction: discord.Interaction, component: str):
         )
     else:
         await interaction.response.send_message("❌ Failed to upgrade ship.")
+
+# =========================
+# MODERATOR APPLICATION COMMANDS
+# =========================
+
+@bot.tree.command(name="apply_mod")
+async def apply_mod(interaction: discord.Interaction):
+    """Apply to become a moderator for the Starflight Pilot crew"""
+    await interaction.response.send_modal(ModApplicationModal())
+
+@bot.tree.command(name="mod_applications")
+@is_staff()
+async def mod_applications(interaction: discord.Interaction, status: Optional[str] = "pending"):
+    """View moderator applications (Staff only)"""
+    valid_statuses = ["pending", "accepted", "rejected", "all"]
+    if status not in valid_statuses:
+        return await interaction.response.send_message(
+            f"❌ Invalid status. Use: {', '.join(valid_statuses)}",
+            ephemeral=True
+        )
+    
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            if status == "all":
+                cur.execute("""
+                    SELECT * FROM mod_applications 
+                    ORDER BY submitted_at DESC LIMIT 20
+                """)
+            else:
+                cur.execute("""
+                    SELECT * FROM mod_applications 
+                    WHERE status = %s 
+                    ORDER BY submitted_at DESC LIMIT 20
+                """, (status,))
+            applications = cur.fetchall()
+    
+    if not applications:
+        return await interaction.response.send_message(
+            f"📋 No {status} applications found.",
+            ephemeral=True
+        )
+    
+    embed = discord.Embed(
+        title=f"📋 Moderator Applications ({status.title()})",
+        color=discord.Color.blue()
+    )
+    
+    for app in applications[:10]:  # Show first 10
+        try:
+            user = await interaction.guild.fetch_member(app['user_id'])
+            status_emoji = {"pending": "⏳", "accepted": "✅", "rejected": "❌"}.get(app['status'], "❓")
+            
+            embed.add_field(
+                name=f"{status_emoji} {user.display_name} (ID: {app['id']})",
+                value=f"Submitted: <t:{int(app['submitted_at'].timestamp())}:R>\nUse `/mod_application_view {app['id']}` to review",
+                inline=False
+            )
+        except:
+            embed.add_field(
+                name=f"{status_emoji} Unknown User (ID: {app['id']})",
+                value=f"User ID: {app['user_id']}\nSubmitted: <t:{int(app['submitted_at'].timestamp())}:R>",
+                inline=False
+            )
+    
+    if len(applications) > 10:
+        embed.set_footer(text=f"Showing 10 of {len(applications)} applications")
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="mod_application_view")
+@is_staff()
+async def mod_application_view(interaction: discord.Interaction, application_id: int):
+    """View a specific moderator application (Staff only)"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM mod_applications WHERE id = %s", (application_id,))
+            app = cur.fetchone()
+    
+    if not app:
+        return await interaction.response.send_message("❌ Application not found.", ephemeral=True)
+    
+    try:
+        user = await interaction.guild.fetch_member(app['user_id'])
+        user_mention = user.mention
+        avatar_url = user.display_avatar.url
+    except:
+        user_mention = f"Unknown User (ID: {app['user_id']})"
+        avatar_url = None
+    
+    status_color = {
+        "pending": discord.Color.orange(),
+        "accepted": discord.Color.green(),
+        "rejected": discord.Color.red()
+    }.get(app['status'], discord.Color.grey())
+    
+    embed = discord.Embed(
+        title=f"📋 Application #{app['id']}",
+        color=status_color
+    )
+    
+    if avatar_url:
+        embed.set_thumbnail(url=avatar_url)
+    
+    embed.add_field(name="👤 Applicant", value=user_mention, inline=True)
+    embed.add_field(name="📊 Status", value=app['status'].title(), inline=True)
+    embed.add_field(name="📅 Submitted", value=f"<t:{int(app['submitted_at'].timestamp())}:R>", inline=True)
+    embed.add_field(name="🎂 Age", value=app['age'], inline=True)
+    embed.add_field(name="🌍 Timezone", value=app['timezone'], inline=True)
+    embed.add_field(name="⏰ Availability", value=app['availability'], inline=True)
+    embed.add_field(name="📚 Experience", value=app['experience'], inline=False)
+    embed.add_field(name="💭 Why Moderator?", value=app['why_mod'], inline=False)
+    embed.add_field(name="⚖️ Conflict Handling", value=app['scenarios'], inline=False)
+    
+    if app['additional'] and app['additional'] != "N/A":
+        embed.add_field(name="➕ Additional Info", value=app['additional'], inline=False)
+    
+    if app['reviewed_by']:
+        try:
+            reviewer = await interaction.guild.fetch_member(app['reviewed_by'])
+            embed.add_field(
+                name="👔 Reviewed By",
+                value=f"{reviewer.mention} on <t:{int(app['reviewed_at'].timestamp())}:R>",
+                inline=False
+            )
+        except:
+            pass
+    
+    embed.set_footer(text=f"Use /mod_application_accept or /mod_application_reject {application_id}")
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="mod_application_accept")
+@is_staff()
+async def mod_application_accept(interaction: discord.Interaction, application_id: int, message: Optional[str] = None):
+    """Accept a moderator application (Staff only)"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM mod_applications WHERE id = %s", (application_id,))
+            app = cur.fetchone()
+            
+            if not app:
+                return await interaction.response.send_message("❌ Application not found.", ephemeral=True)
+            
+            if app['status'] != 'pending':
+                return await interaction.response.send_message(
+                    f"❌ This application has already been {app['status']}.",
+                    ephemeral=True
+                )
+            
+            # Update application status
+            cur.execute("""
+                UPDATE mod_applications 
+                SET status = 'accepted', reviewed_by = %s, reviewed_at = NOW()
+                WHERE id = %s
+            """, (interaction.user.id, application_id))
+    
+    # Send DM to applicant
+    try:
+        user = await interaction.guild.fetch_member(app['user_id'])
+        
+        dm_embed = discord.Embed(
+            title="✅ Moderator Application Accepted!",
+            description="Congratulations! Your application to become a moderator has been **accepted**!",
+            color=discord.Color.green()
+        )
+        dm_embed.add_field(
+            name="🎊 Welcome to the Team!",
+            value="A staff member will reach out to you soon with next steps and training information.",
+            inline=False
+        )
+        
+        if message:
+            dm_embed.add_field(name="📝 Message from Staff", value=message, inline=False)
+        
+        dm_embed.set_footer(text=f"Starflight Pilot • {interaction.guild.name}")
+        
+        await user.send(embed=dm_embed)
+        dm_status = "✅ DM sent"
+    except:
+        dm_status = "⚠️ Could not send DM"
+    
+    await interaction.response.send_message(
+        f"✅ Application #{application_id} **accepted**! {dm_status}",
+        ephemeral=True
+    )
+
+@bot.tree.command(name="mod_application_reject")
+@is_staff()
+async def mod_application_reject(interaction: discord.Interaction, application_id: int, reason: Optional[str] = None):
+    """Reject a moderator application (Staff only)"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM mod_applications WHERE id = %s", (application_id,))
+            app = cur.fetchone()
+            
+            if not app:
+                return await interaction.response.send_message("❌ Application not found.", ephemeral=True)
+            
+            if app['status'] != 'pending':
+                return await interaction.response.send_message(
+                    f"❌ This application has already been {app['status']}.",
+                    ephemeral=True
+                )
+            
+            # Update application status
+            cur.execute("""
+                UPDATE mod_applications 
+                SET status = 'rejected', reviewed_by = %s, reviewed_at = NOW()
+                WHERE id = %s
+            """, (interaction.user.id, application_id))
+    
+    # Send DM to applicant
+    try:
+        user = await interaction.guild.fetch_member(app['user_id'])
+        
+        dm_embed = discord.Embed(
+            title="❌ Moderator Application Update",
+            description="Thank you for your interest in becoming a moderator. Unfortunately, we are unable to accept your application at this time.",
+            color=discord.Color.red()
+        )
+        dm_embed.add_field(
+            name="🌟 Don't Give Up!",
+            value="This doesn't mean you can't apply again in the future. Continue being an active and positive member of our community!",
+            inline=False
+        )
+        
+        if reason:
+            dm_embed.add_field(name="📝 Feedback", value=reason, inline=False)
+        
+        dm_embed.set_footer(text=f"Starflight Pilot • {interaction.guild.name}")
+        
+        await user.send(embed=dm_embed)
+        dm_status = "✅ DM sent"
+    except:
+        dm_status = "⚠️ Could not send DM"
+    
+    await interaction.response.send_message(
+        f"❌ Application #{application_id} **rejected**. {dm_status}",
+        ephemeral=True
+    )
+
+@bot.tree.command(name="my_application")
+async def my_application(interaction: discord.Interaction):
+    """Check the status of your moderator application"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT * FROM mod_applications 
+                WHERE user_id = %s 
+                ORDER BY submitted_at DESC LIMIT 1
+            """, (interaction.user.id,))
+            app = cur.fetchone()
+    
+    if not app:
+        return await interaction.response.send_message(
+            "📋 You haven't submitted a moderator application yet. Use `/apply_mod` to apply!",
+            ephemeral=True
+        )
+    
+    status_emoji = {"pending": "⏳", "accepted": "✅", "rejected": "❌"}.get(app['status'], "❓")
+    status_color = {
+        "pending": discord.Color.orange(),
+        "accepted": discord.Color.green(),
+        "rejected": discord.Color.red()
+    }.get(app['status'], discord.Color.grey())
+    
+    embed = discord.Embed(
+        title=f"{status_emoji} Your Moderator Application",
+        color=status_color
+    )
+    embed.add_field(name="📊 Status", value=app['status'].title(), inline=True)
+    embed.add_field(name="📅 Submitted", value=f"<t:{int(app['submitted_at'].timestamp())}:R>", inline=True)
+    
+    if app['status'] == 'pending':
+        embed.description = "Your application is currently being reviewed by our staff team. We'll notify you once a decision has been made!"
+    elif app['status'] == 'accepted':
+        embed.description = "Congratulations! Your application was accepted. A staff member should reach out to you soon."
+    elif app['status'] == 'rejected':
+        embed.description = "Your application was not accepted this time. You're welcome to apply again in the future after being an active community member!"
+    
+    embed.set_footer(text="Thank you for your interest in helping our community! 🚀")
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # =========================
 # ERROR HANDLING
