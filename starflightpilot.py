@@ -64,16 +64,6 @@ logger = logging.getLogger("StarflightPilot")
 # IMAGE HELPER
 # =========================
 
-def get_astronaut_image(filename: str) -> Optional[discord.File]:
-    """Get an astronaut clipart image as a Discord File"""
-    try:
-        filepath = os.path.join(IMAGES_DIR, filename)
-        if os.path.exists(filepath):
-            return discord.File(filepath, filename=filename)
-    except Exception as e:
-        logger.error(f"Failed to load image {filename}: {e}")
-    return None
-
 def get_random_astronaut_image() -> Optional[discord.File]:
     """Get a random astronaut image from the directory"""
     try:
@@ -970,7 +960,7 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
     
     # If bot left a channel
     if before.channel and not after.channel:
-        player = music_players.get(member.guild.id)
+        player = music_players.get(before.channel.guild.id)
         if player:
             await player.leave()
 
@@ -1279,10 +1269,11 @@ class ModApplicationModal(discord.ui.Modal, title="Moderator Application"):
                 existing = cur.fetchone()
                 
                 if existing:
-                    return await interaction.response.send_message(
+                    await interaction.response.send_message(
                         "🚫 You already have a pending moderator application. Please wait for a response from staff.",
                         ephemeral=True
                     )
+                    return
                 
                 # Save application
                 cur.execute("""
