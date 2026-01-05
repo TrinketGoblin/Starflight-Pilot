@@ -2030,7 +2030,7 @@ async def mission_report(interaction: discord.Interaction):
     # Track stats and check achievements
     mission_count = AchievementManager.increment_stat(interaction.user.id, "missions_completed")
     await AchievementManager.check_and_award(interaction.user.id, "missions_completed", mission_count, interaction.channel)
-    
+
 @bot.tree.command(name="mission_status")
 async def mission_status(interaction: discord.Interaction):
     """Check your current active mission"""
@@ -2635,7 +2635,7 @@ async def mod_application_view(interaction: discord.Interaction, application_id:
         "pending": discord.Color.orange(),
         "accepted": discord.Color.green(),
         "rejected": discord.Color.red()
-    }.get(app['status'], discord.Color.grey())
+    }.get(app['status'], discord.Color.pink())
     
     embed = discord.Embed(
         title=f"📋 Application #{app['id']}",
@@ -2806,7 +2806,7 @@ async def my_application(interaction: discord.Interaction):
         "pending": discord.Color.orange(),
         "accepted": discord.Color.green(),
         "rejected": discord.Color.red()
-    }.get(app['status'], discord.Color.grey())
+    }.get(app['status'], discord.Color.pink())
     
     embed = discord.Embed(
         title=f"{status_emoji} Your Moderator Application",
