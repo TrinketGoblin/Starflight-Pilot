@@ -1404,7 +1404,7 @@ class ModApplicationModal(discord.ui.Modal, title="Moderator Application"):
                         ephemeral=True
                     )
                 
-                # Save application (simplified - removed the two-part modal)
+                # Save application
                 cur.execute("""
                     INSERT INTO mod_applications 
                     (user_id, username, age, timezone, experience, why_mod, scenarios, availability, additional)
@@ -1416,9 +1416,9 @@ class ModApplicationModal(discord.ui.Modal, title="Moderator Application"):
                     self.timezone.value,
                     self.experience.value,
                     self.why_mod.value,
-                    "See application details",  # placeholder for scenarios field
+                    "See application details",
                     self.availability.value,
-                    "N/A"  # no additional info collected
+                    "N/A"
                 ))
         
         # Send confirmation to user
@@ -1436,63 +1436,7 @@ class ModApplicationModal(discord.ui.Modal, title="Moderator Application"):
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
         
-        # Notify staff in a staff channel (optional)
-        staff_channel = discord.utils.get(interaction.guild.channels, name="staff-notifications")
-        if staff_channel:
-            staff_embed = discord.Embed(
-                title="📋 New Moderator Application",
-                description=f"**{interaction.user.mention}** has submitted a moderator application!",
-                color=discord.Color.blue()
-            )
-            staff_embed.add_field(name="Applicant", value=interaction.user.mention, inline=True)
-            staff_embed.add_field(name="User ID", value=str(interaction.user.id), inline=True)
-            staff_embed.set_thumbnail(url=interaction.user.display_avatar.url)
-            staff_embed.set_footer(text="Use /mod_applications to review")
-            await staff_channel.send(embed=staff_embed)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        # Check if user has a pending application
-        with DatabasePool.get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT id FROM mod_applications 
-                    WHERE user_id = %s AND status = 'pending'
-                """, (interaction.user.id,))
-                existing = cur.fetchone()
-                
-                if existing:
-                    return await interaction.response.send_message(
-                        "🚫 You already have a pending moderator application. Please wait for a response from staff.",
-                        ephemeral=True
-                    )
-                
-                cur.execute("""
-                    INSERT INTO mod_applications 
-                    (user_id, username, age, timezone, experience, why_mod, scenarios, availability, additional)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (
-                    interaction.user.id,
-                    str(interaction.user),
-                    self.age.value,
-                    self.timezone.value,
-                    self.experience.value,
-                    self.why_mod.value,
-                    "See application details",  # Fixed - no longer references self.scenarios
-                    self.availability.value,
-                    "N/A"  # Fixed - no longer references self.additional
-                ))
-        )
-        embed.add_field(
-            name="What's Next?",
-            value="Our staff team will review your application and get back to you soon. You'll receive a DM with our decision.",
-            inline=False
-        )
-        embed.set_footer(text="May the stars guide you! 🚀")
-        
-        await interaction.response.send_message(embed=embed)
-        
-        # Notify staff in a staff channel (optional - you can configure this)
-        # Find a staff notifications channel or log channel
+        # Notify staff in a staff channel
         staff_channel = discord.utils.get(interaction.guild.channels, name="staff-notifications")
         if staff_channel:
             staff_embed = discord.Embed(
