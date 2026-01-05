@@ -1287,7 +1287,8 @@ class ModApplicationModal(discord.ui.Modal, title="Moderator Application"):
 
     async def on_submit(self, interaction: discord.Interaction):
         # Follow-up modal for additional questions
-        await interaction.response.send_modal(ModApplicationModal2(
+        await interaction.response.defer(ephemeral=True)
+        await interaction.followup.send_modal(ModApplicationModal2(
             self.age.value,
             self.timezone.value,
             self.experience.value,
