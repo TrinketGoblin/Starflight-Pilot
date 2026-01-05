@@ -206,52 +206,18 @@ def migrate_db():
     """Run database migrations"""
     with DatabasePool.get_conn() as conn:
         with conn.cursor() as cur:
-            # Add image_data column if it doesn't exist
-            cur.execute("""
-                DO $$ 
-                BEGIN
-                    IF NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns 
-                        WHERE table_name='plushies' AND column_name='image_data'
-                    ) THEN
-                        ALTER TABLE plushies ADD COLUMN image_data BYTEA;
-                    END IF;
-                END $$;
-            """)
+            # Existing migrations
+            cur.execute("ALTER TABLE plushies ADD COLUMN IF NOT EXISTS image_data BYTEA;")
+            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS items_purchased INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS ship_upgrades INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS total_items_owned INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS total_credits_earned INTEGER DEFAULT 0;")
             
-            # Add new economy stat columns
-            cur.execute("""
-                DO $$ 
-                BEGIN
-                    IF NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns 
-                        WHERE table_name='user_stats' AND column_name='items_purchased'
-                    ) THEN
-                        ALTER TABLE user_stats ADD COLUMN items_purchased INTEGER DEFAULT 0;
-                    END IF;
-                    
-                    IF NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns 
-                        WHERE table_name='user_stats' AND column_name='ship_upgrades'
-                    ) THEN
-                        ALTER TABLE user_stats ADD COLUMN ship_upgrades INTEGER DEFAULT 0;
-                    END IF;
-                    
-                    IF NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns 
-                        WHERE table_name='user_stats' AND column_name='total_items_owned'
-                    ) THEN
-                        ALTER TABLE user_stats ADD COLUMN total_items_owned INTEGER DEFAULT 0;
-                    END IF;
-                    
-                    IF NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns 
-                        WHERE table_name='user_stats' AND column_name='total_credits_earned'
-                    ) THEN
-                        ALTER TABLE user_stats ADD COLUMN total_credits_earned INTEGER DEFAULT 0;
-                    END IF;
-                END $$;
-            """)
+            # --- NEW SALVAGE & DAMAGE MIGRATIONS ---
+            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS salvages_completed INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE ships ADD COLUMN IF NOT EXISTS health INTEGER DEFAULT 100;")
+            cur.execute("ALTER TABLE ships ADD COLUMN IF NOT EXISTS max_health INTEGER DEFAULT 100;")
+            # ---------------------------------------
     logger.info("Database migrations completed")
 
 def init_db():
@@ -263,78 +229,9 @@ def init_db():
         conn.autocommit = True
         cur = conn.cursor()
         try:
-            # Plushies table
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS plushies (
-                    id SERIAL PRIMARY KEY,
-                    user_id BIGINT NOT NULL,
-                    name TEXT NOT NULL,
-                    species TEXT,
-                    color TEXT,
-                    personality TEXT,
-                    description TEXT,
-                    registered_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                    image_data BYTEA
-                )
-            """)
-            cur.execute("""
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_plushie_user_name
-                ON plushies (user_id, LOWER(name))
-            """)
+            # (Keep all your existing CREATE TABLE calls here: plushies, saved_embeds, etc.)
             
-            # Saved embeds table
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS saved_embeds (
-                    id SERIAL PRIMARY KEY,
-                    name TEXT NOT NULL UNIQUE,
-                    title TEXT,
-                    description TEXT,
-                    color TEXT,
-                    image_url TEXT,
-                    footer TEXT,
-                    fields JSONB DEFAULT '[]'::jsonb,
-                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Server backups table
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS server_backups (
-                    id SERIAL PRIMARY KEY,
-                    guild_id BIGINT NOT NULL,
-                    backup_data JSONB NOT NULL,
-                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Achievements tables
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS achievements (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    description TEXT,
-                    icon TEXT,
-                    category TEXT,
-                    requirement_type TEXT,
-                    requirement_count INTEGER,
-                    points INTEGER DEFAULT 0,
-                    hidden BOOLEAN DEFAULT FALSE
-                )
-            """)
-            
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS user_achievements (
-                    user_id BIGINT,
-                    achievement_id TEXT,
-                    progress INTEGER DEFAULT 0,
-                    unlocked BOOLEAN DEFAULT FALSE,
-                    unlocked_at TIMESTAMPTZ,
-                    PRIMARY KEY (user_id, achievement_id)
-                )
-            """)
-            
-            # User stats table
+            # UPDATED User stats table
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS user_stats (
                     user_id BIGINT PRIMARY KEY,
@@ -349,43 +246,12 @@ def init_db():
                     ship_upgrades INTEGER DEFAULT 0,
                     total_items_owned INTEGER DEFAULT 0,
                     total_credits_earned INTEGER DEFAULT 0,
-                    total_points INTEGER DEFAULT 0
+                    total_points INTEGER DEFAULT 0,
+                    salvages_completed INTEGER DEFAULT 0
                 )
             """)
-            
-            # Active missions table
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS active_missions (
-                    user_id BIGINT PRIMARY KEY,
-                    mission_text TEXT NOT NULL,
-                    started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Shop items table
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS shop_items (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    description TEXT,
-                    price INTEGER NOT NULL,
-                    emoji TEXT,
-                    type TEXT,
-                    rarity INTEGER DEFAULT 1
-                )
-            """)
-            
-            # Inventory table
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS inventory (
-                    user_id BIGINT,
-                    item_id TEXT,
-                    quantity INTEGER DEFAULT 1,
-                    PRIMARY KEY (user_id, item_id)
-                )
-            """)
-            
-            # Ships table
+
+            # UPDATED Ships table
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS ships (
                     user_id BIGINT PRIMARY KEY,
@@ -394,39 +260,20 @@ def init_db():
                     engine_level INTEGER DEFAULT 1,
                     weapon_level INTEGER DEFAULT 1,
                     shield_level INTEGER DEFAULT 1,
+                    health INTEGER DEFAULT 100,
+                    max_health INTEGER DEFAULT 100,
                     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             
-            # Moderator applications table - THIS WAS MISSING!
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS mod_applications (
-                    id SERIAL PRIMARY KEY,
-                    user_id BIGINT NOT NULL,
-                    username TEXT NOT NULL,
-                    age TEXT NOT NULL,
-                    timezone TEXT NOT NULL,
-                    experience TEXT NOT NULL,
-                    why_mod TEXT NOT NULL,
-                    scenarios TEXT NOT NULL,
-                    availability TEXT NOT NULL,
-                    additional TEXT,
-                    status TEXT DEFAULT 'pending',
-                    reviewed_by BIGINT,
-                    reviewed_at TIMESTAMPTZ,
-                    submitted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Initialize default data
+            # (Keep the rest of your init_db logic...)
             init_default_achievements(cur)
             init_shop_items(cur)
-            
         finally:
             cur.close()
-    
     _db_initialized = True
-    logger.info("✅ Database initialized successfully")
+    logger.info("Database initialized")
+
 # =========================
 # ACHIEVEMENT SYSTEM
 # =========================
@@ -536,7 +383,7 @@ def calculate_upgrade_cost(current_level: int, base_cost: int) -> int:
     """Calculate cost for next upgrade level"""
     return base_cost * (current_level + 1)
 
-class ShipManager:
+cclass ShipManager:
     """Manages personal starship operations"""
     
     @staticmethod
@@ -545,8 +392,8 @@ class ShipManager:
             with DatabasePool.get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
-                        INSERT INTO ships (user_id, name, ship_class, engine_level, weapon_level, shield_level)
-                        VALUES (%s, %s, 'Scout', 1, 1, 1)
+                        INSERT INTO ships (user_id, name, ship_class, engine_level, weapon_level, shield_level, health, max_health)
+                        VALUES (%s, %s, 'Scout', 1, 1, 1, 100, 100)
                     """, (user_id, name))
             return True
         except Exception as e:
@@ -559,17 +406,35 @@ class ShipManager:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("SELECT * FROM ships WHERE user_id = %s", (user_id,))
                 return cur.fetchone()
+
+    @staticmethod
+    def damage_ship(user_id: int, amount: int) -> int:
+        """Subtract health from ship and return new health"""
+        with DatabasePool.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE ships SET health = GREATEST(0, health - %s) 
+                    WHERE user_id = %s RETURNING health
+                """, (amount, user_id))
+                return cur.fetchone()[0]
+
+    @staticmethod
+    def repair_ship(user_id: int, amount: int) -> int:
+        """Add health to ship and return new health"""
+        with DatabasePool.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE ships SET health = LEAST(max_health, health + %s) 
+                    WHERE user_id = %s RETURNING health
+                """, (amount, user_id))
+                return cur.fetchone()[0]
     
     @staticmethod
     def upgrade_ship(user_id: int, component: str) -> bool:
         try:
             with DatabasePool.get_conn() as conn:
                 with conn.cursor() as cur:
-                    cur.execute(f"""
-                        UPDATE ships SET {component}_level = {component}_level + 1
-                        WHERE user_id = %s
-                        RETURNING {component}_level
-                    """, (user_id,))
+                    cur.execute(f"UPDATE ships SET {component}_level = {component}_level + 1 WHERE user_id = %s RETURNING {component}_level", (user_id,))
                     result = cur.fetchone()
                     return result is not None
         except Exception as e:
@@ -2493,25 +2358,22 @@ async def inventory(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="ship")
-async def ship(interaction: discord.Interaction):
-    """View your ship"""
+@bot.tree.command(name="ship", description="Check your ship's current status and health")
+async def ship_status(interaction: discord.Interaction):
     ship = ShipManager.get_ship(interaction.user.id)
     if not ship:
-        return await interaction.response.send_message(
-            "🚀 You don't have a ship yet. Use `/ship_create`."
-        )
+        return await interaction.response.send_message("You don't own a ship yet!", ephemeral=True)
+    
+    # Calculate health percentage for a visual bar
+    percent = (ship['health'] / ship['max_health']) * 10
+    health_bar = "🟩" * int(percent) + "🟥" * (10 - int(percent))
 
-    embed = discord.Embed(
-        title=f"🚀 {ship['name']}",
-        description=f"Class: **{ship['ship_class']}**",
-        color=discord.Color.orange()
-    )
-
-    embed.add_field(name="🚀 Engine", value=f"Level {ship['engine_level']}")
-    embed.add_field(name="🔫 Weapons", value=f"Level {ship['weapon_level']}")
-    embed.add_field(name="🛡️ Shields", value=f"Level {ship['shield_level']}")
-
+    embed = discord.Embed(title=f"🚀 Starship: {ship['name']}", color=discord.Color.blue())
+    embed.add_field(name="Hull Integrity", value=f"{health_bar}\n{ship['health']} / {ship['max_health']} HP", inline=False)
+    embed.add_field(name="Ship Class", value=ship['ship_class'], inline=True)
+    embed.add_field(name="Engine Level", value=ship['engine_level'], inline=True)
+    embed.add_field(name="Shield Level", value=ship['shield_level'], inline=True)
+    
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="ship_create")
@@ -2865,6 +2727,66 @@ async def my_application(interaction: discord.Interaction):
     embed.set_footer(text="Thank you for your interest in helping our community! 🚀")
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="salvage", description="Scavenge deep space wreckage for loot (risk of ship damage!)")
+@app_commands.checks.cooldown(1, 60, key=lambda i: (i.user.id))
+async def salvage(interaction: discord.Interaction):
+    ship = ShipManager.get_ship(interaction.user.id)
+    if not ship:
+        return await interaction.response.send_message("❌ You don't have a ship! Use `/register_ship` first.", ephemeral=True)
+    
+    if ship['health'] <= 0:
+        return await interaction.response.send_message("⚠️ Your ship is too damaged to fly! Use `/repair_ship` first.", ephemeral=True)
+
+    await interaction.response.defer()
+    roll = random.random()
+    
+    # 25% chance of taking damage
+    if roll < 0.25:
+        damage = random.randint(15, 35)
+        new_hp = ShipManager.damage_ship(interaction.user.id, damage)
+        embed = discord.Embed(
+            title="💥 Collision during Salvage!",
+            description=f"You navigated a debris field but hit a bulkhead! Took **{damage}** damage.\n\n**Hull Integrity:** {new_hp}/{ship['max_health']} HP",
+            color=discord.Color.red()
+        )
+    # 45% chance of finding an item
+    elif roll < 0.70:
+        loot_pool = ["fuel", "stardust", "repair_kit", "nebula_crystal"]
+        item_id = random.choice(loot_pool)
+        InventoryManager.add_item(interaction.user.id, item_id)
+        AchievementManager.increment_stat(interaction.user.id, "salvages_completed")
+        
+        embed = discord.Embed(
+            title="📦 Successful Salvage",
+            description=f"You successfully recovered 1x **{item_id.replace('_', ' ').title()}** from the wreckage!",
+            color=discord.Color.green()
+        )
+    # 30% chance of finding nothing
+    else:
+        embed = discord.Embed(
+            title="🌌 Empty Wreckage",
+            description="You searched the floating remains but found nothing of value.",
+            color=discord.Color.blue()
+        )
+    
+    await interaction.followup.send(embed=embed)
+
+@bot.tree.command(name="repair_ship", description="Use a repair kit to fix your ship's hull")
+async def repair_ship_cmd(interaction: discord.Interaction):
+    ship = ShipManager.get_ship(interaction.user.id)
+    if not ship:
+        return await interaction.response.send_message("❌ You don't have a ship.", ephemeral=True)
+        
+    if ship['health'] >= ship['max_health']:
+        return await interaction.response.send_message("✅ Your ship is already at full health!", ephemeral=True)
+
+    has_kit = InventoryManager.remove_item(interaction.user.id, "repair_kit", 1)
+    if not has_kit:
+        return await interaction.response.send_message("❌ You don't have any **Repair Kits** in your inventory! Buy one from the `/shop`.", ephemeral=True)
+    
+    new_hp = ShipManager.repair_ship(interaction.user.id, 50)
+    await interaction.response.send_message(f"🔧 **Repairs Complete!** Your ship has been restored to **{new_hp}/{ship['max_health']} HP**.")
 
 # =========================
 # ERROR HANDLING
