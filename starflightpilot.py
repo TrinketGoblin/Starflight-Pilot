@@ -2060,6 +2060,11 @@ async def orbit(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed)
 
     except Exception as e:
+        logger.error(f"Error in command: {e}")
+        # If there's an error, we still want to proceed to the next command/logic
+        pass 
+
+@app_commands.checks.cooldown(1, 300, key=lambda i: i.user.id) # 5 min cooldown
 @app_commands.checks.cooldown(1, 300, key=lambda i: i.user.id) # 5 min cooldown
 async def salvage(interaction: discord.Interaction):
     outcomes = [
