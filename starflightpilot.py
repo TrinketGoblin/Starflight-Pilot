@@ -281,6 +281,8 @@ def init_db():
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_plushie_user_name
                 ON plushies (user_id, LOWER(name))
             """)
+            
+            # Saved embeds table
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS saved_embeds (
                     id SERIAL PRIMARY KEY,
@@ -295,6 +297,8 @@ def init_db():
                     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # Server backups table
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS server_backups (
                     id SERIAL PRIMARY KEY,
@@ -303,6 +307,22 @@ def init_db():
                     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # Achievements tables
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS achievements (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    icon TEXT,
+                    category TEXT,
+                    requirement_type TEXT,
+                    requirement_count INTEGER,
+                    points INTEGER DEFAULT 0,
+                    hidden BOOLEAN DEFAULT FALSE
+                )
+            """)
+            
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS user_achievements (
                     user_id BIGINT,
@@ -313,17 +333,100 @@ def init_db():
                     PRIMARY KEY (user_id, achievement_id)
                 )
             """)
+            
+            # User stats table
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS user_stats (
                     user_id BIGINT PRIMARY KEY,
                     missions_completed INTEGER DEFAULT 0,
                     encouragements_given INTEGER DEFAULT 0,
-                    encouragements_received INTEGER DEFAULT 0
+                    encouragements_received INTEGER DEFAULT 0,
+                    plushies_registered INTEGER DEFAULT 0,
+                    facts_learned INTEGER DEFAULT 0,
+                    planets_discovered INTEGER DEFAULT 0,
+                    spacewalks_taken INTEGER DEFAULT 0,
+                    items_purchased INTEGER DEFAULT 0,
+                    ship_upgrades INTEGER DEFAULT 0,
+                    total_items_owned INTEGER DEFAULT 0,
+                    total_credits_earned INTEGER DEFAULT 0,
+                    total_points INTEGER DEFAULT 0
                 )
             """)
+            
+            # Active missions table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS active_missions (
+                    user_id BIGINT PRIMARY KEY,
+                    mission_text TEXT NOT NULL,
+                    started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Shop items table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS shop_items (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    price INTEGER NOT NULL,
+                    emoji TEXT,
+                    type TEXT,
+                    rarity INTEGER DEFAULT 1
+                )
+            """)
+            
+            # Inventory table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS inventory (
+                    user_id BIGINT,
+                    item_id TEXT,
+                    quantity INTEGER DEFAULT 1,
+                    PRIMARY KEY (user_id, item_id)
+                )
+            """)
+            
+            # Ships table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ships (
+                    user_id BIGINT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    ship_class TEXT DEFAULT 'Scout',
+                    engine_level INTEGER DEFAULT 1,
+                    weapon_level INTEGER DEFAULT 1,
+                    shield_level INTEGER DEFAULT 1,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Moderator applications table - THIS WAS MISSING!
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS mod_applications (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    username TEXT NOT NULL,
+                    age TEXT NOT NULL,
+                    timezone TEXT NOT NULL,
+                    experience TEXT NOT NULL,
+                    why_mod TEXT NOT NULL,
+                    scenarios TEXT NOT NULL,
+                    availability TEXT NOT NULL,
+                    additional TEXT,
+                    status TEXT DEFAULT 'pending',
+                    reviewed_by BIGINT,
+                    reviewed_at TIMESTAMPTZ,
+                    submitted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Initialize default data
+            init_default_achievements(cur)
+            init_shop_items(cur)
+            
         finally:
             cur.close()
+    
     _db_initialized = True
+    logger.info("✅ Database initialized successfully")
 # =========================
 # ACHIEVEMENT SYSTEM
 # =========================
@@ -1275,49 +1378,77 @@ class ModApplicationModal(discord.ui.Modal, title="Moderator Application"):
         style=discord.TextStyle.paragraph,
         max_length=500
     )
-    scenarios = discord.ui.TextInput(
-        label="How would you handle conflict?",
-        placeholder="Describe how you'd handle a heated argument between members",
-        style=discord.TextStyle.paragraph,
-        max_length=500
-    )
-
-    def __init__(self):
-        super().__init__()
-
-    async def on_submit(self, interaction: discord.Interaction):
-        # Follow-up modal for additional questions
-        await interaction.response.defer(ephemeral=True)
-        await interaction.followup.send_modal(ModApplicationModal2(
-            self.age.value,
-            self.timezone.value,
-            self.experience.value,
-            self.why_mod.value,
-            self.scenarios.value
-        ))
-
-class ModApplicationModal2(discord.ui.Modal, title="Moderator Application (Part 2)"):
     availability = discord.ui.TextInput(
         label="Availability",
         placeholder="When are you typically online? (days/times)",
         style=discord.TextStyle.paragraph,
         max_length=300
     )
-    additional = discord.ui.TextInput(
-        label="Anything else we should know?",
-        placeholder="Optional: Share anything else relevant",
-        style=discord.TextStyle.paragraph,
-        required=False,
-        max_length=500
-    )
 
-    def __init__(self, age: str, timezone: str, experience: str, why_mod: str, scenarios: str):
+    def __init__(self):
         super().__init__()
-        self.age = age
-        self.timezone = timezone
-        self.experience = experience
-        self.why_mod = why_mod
-        self.scenarios = scenarios
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # Check if user has a pending application
+        with DatabasePool.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id FROM mod_applications 
+                    WHERE user_id = %s AND status = 'pending'
+                """, (interaction.user.id,))
+                existing = cur.fetchone()
+                
+                if existing:
+                    return await interaction.response.send_message(
+                        "🚫 You already have a pending moderator application. Please wait for a response from staff.",
+                        ephemeral=True
+                    )
+                
+                # Save application (simplified - removed the two-part modal)
+                cur.execute("""
+                    INSERT INTO mod_applications 
+                    (user_id, username, age, timezone, experience, why_mod, scenarios, availability, additional)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    interaction.user.id,
+                    str(interaction.user),
+                    self.age.value,
+                    self.timezone.value,
+                    self.experience.value,
+                    self.why_mod.value,
+                    "N/A",  # scenarios - removed since we simplified
+                    self.availability.value,
+                    "N/A"
+                ))
+        
+        # Send confirmation to user
+        embed = discord.Embed(
+            title="✅ Application Submitted!",
+            description="Thank you for applying to be a moderator for the Starflight Pilot crew!",
+            color=discord.Color.green()
+        )
+        embed.add_field(
+            name="What's Next?",
+            value="Our staff team will review your application and get back to you soon. You'll receive a DM with our decision.",
+            inline=False
+        )
+        embed.set_footer(text="May the stars guide you! 🚀")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        # Notify staff in a staff channel (optional)
+        staff_channel = discord.utils.get(interaction.guild.channels, name="staff-notifications")
+        if staff_channel:
+            staff_embed = discord.Embed(
+                title="📋 New Moderator Application",
+                description=f"**{interaction.user.mention}** has submitted a moderator application!",
+                color=discord.Color.blue()
+            )
+            staff_embed.add_field(name="Applicant", value=interaction.user.mention, inline=True)
+            staff_embed.add_field(name="User ID", value=str(interaction.user.id), inline=True)
+            staff_embed.set_thumbnail(url=interaction.user.display_avatar.url)
+            staff_embed.set_footer(text="Use /mod_applications to review")
+            await staff_channel.send(embed=staff_embed)
 
     async def on_submit(self, interaction: discord.Interaction):
         # Check if user has a pending application
