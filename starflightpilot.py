@@ -1416,9 +1416,9 @@ class ModApplicationModal(discord.ui.Modal, title="Moderator Application"):
                     self.timezone.value,
                     self.experience.value,
                     self.why_mod.value,
-                    "N/A",  # scenarios - removed since we simplified
+                    "See application details",  # placeholder for scenarios field
                     self.availability.value,
-                    "N/A"
+                    "N/A"  # no additional info collected
                 ))
         
         # Send confirmation to user
