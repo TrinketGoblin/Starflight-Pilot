@@ -1466,7 +1466,6 @@ class ModApplicationModal(discord.ui.Modal, title="Moderator Application"):
                         ephemeral=True
                     )
                 
-                # Save application
                 cur.execute("""
                     INSERT INTO mod_applications 
                     (user_id, username, age, timezone, experience, why_mod, scenarios, availability, additional)
@@ -1474,20 +1473,14 @@ class ModApplicationModal(discord.ui.Modal, title="Moderator Application"):
                 """, (
                     interaction.user.id,
                     str(interaction.user),
-                    self.age,
-                    self.timezone,
-                    self.experience,
-                    self.why_mod,
-                    self.scenarios,
+                    self.age.value,
+                    self.timezone.value,
+                    self.experience.value,
+                    self.why_mod.value,
+                    "See application details",  # Fixed - no longer references self.scenarios
                     self.availability.value,
-                    self.additional.value or "N/A"
+                    "N/A"  # Fixed - no longer references self.additional
                 ))
-        
-        # Send confirmation to user
-        embed = discord.Embed(
-            title="✅ Application Submitted!",
-            description="Thank you for applying to be a moderator for the Starflight Pilot crew!",
-            color=discord.Color.green()
         )
         embed.add_field(
             name="What's Next?",
