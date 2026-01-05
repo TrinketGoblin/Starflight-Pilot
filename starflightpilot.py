@@ -949,6 +949,7 @@ bot = StarflightBot()
 @bot.event
 async def on_ready():
     init_db()
+    migrate_db()
     logger.info(f"🚀 Starflight Pilot online as {bot.user}")
     logger.info(f"📋 Registered commands: {[cmd.name for cmd in bot.tree.get_commands()]}")
 
@@ -2525,6 +2526,8 @@ async def mod_applications(interaction: discord.Interaction, status: Optional[st
 @is_staff()
 async def mod_application_view(interaction: discord.Interaction, application_id: int):
     """View a specific moderator application (Staff only)"""
+    if not interaction.guild:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
     with DatabasePool.get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT * FROM mod_applications WHERE id = %s", (application_id,))
@@ -2587,6 +2590,8 @@ async def mod_application_view(interaction: discord.Interaction, application_id:
 @is_staff()
 async def mod_application_accept(interaction: discord.Interaction, application_id: int, message: Optional[str] = None):
     """Accept a moderator application (Staff only)"""
+    if not interaction.guild:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
     with DatabasePool.get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT * FROM mod_applications WHERE id = %s", (application_id,))
@@ -2642,6 +2647,8 @@ async def mod_application_accept(interaction: discord.Interaction, application_i
 @is_staff()
 async def mod_application_reject(interaction: discord.Interaction, application_id: int, reason: Optional[str] = None):
     """Reject a moderator application (Staff only)"""
+    if not interaction.guild:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
     with DatabasePool.get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT * FROM mod_applications WHERE id = %s", (application_id,))
