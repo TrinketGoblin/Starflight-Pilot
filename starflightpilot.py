@@ -2295,7 +2295,7 @@ async def shop(interaction: discord.Interaction):
     for item_id, item in SHOP_ITEMS.items():
         embed.add_field(
             name=f"{item['emoji']} {item['name']} — {item['price']}💳",
-            value=item["description"],
+            value=f'{item["description"]}\n*ID: `{item_id}`*',
             inline=False
         )
 
