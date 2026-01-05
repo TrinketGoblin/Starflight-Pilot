@@ -383,7 +383,7 @@ def calculate_upgrade_cost(current_level: int, base_cost: int) -> int:
     """Calculate cost for next upgrade level"""
     return base_cost * (current_level + 1)
 
-cclass ShipManager:
+class ShipManager:
     """Manages personal starship operations"""
     
     @staticmethod
