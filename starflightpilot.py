@@ -106,6 +106,10 @@ class DatabasePool:
     def get_conn(cls):
         if cls._pool is None:
             cls.initialize()
+        
+        if cls._pool is None:
+            raise RuntimeError("Database connection pool is not initialized")
+            
         conn = cls._pool.getconn()
         try:
             yield conn
@@ -114,7 +118,8 @@ class DatabasePool:
             conn.rollback()
             raise
         finally:
-            cls._pool.putconn(conn)
+            if cls._pool:
+                cls._pool.putconn(conn)
 
 
 _db_initialized = False
@@ -280,7 +285,7 @@ def init_db():
 
 class AchievementManager:
     @staticmethod
-    async def check_and_award(user_id: int, stat_type: str, new_value: int, channel: discord.TextChannel = None):
+    async def check_and_award(user_id: int, stat_type: str, new_value: int, channel: Optional[discord.TextChannel] = None):
         """Check if user unlocked any achievements and award them"""
         unlocked = []
         
@@ -800,7 +805,10 @@ class BackupManager:
                         ch_overwrites = BackupManager._deserialize_overwrites(guild, ch_data["overwrites"], role_map)
                         
                         if existing_ch:
-                            await existing_ch.edit(name=ch_name, category=new_cat, overwrites=ch_overwrites)
+                            if isinstance(existing_ch, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel, discord.ForumChannel)):
+                                await existing_ch.edit(name=ch_name, category=new_cat, overwrites=ch_overwrites)
+                            else:
+                                await existing_ch.edit(name=ch_name, overwrites=ch_overwrites)
                             logger.info(f"Updated existing channel: {ch_name}")
                         else:
                             if ch_data["type"] == "text":
@@ -916,6 +924,10 @@ def build_embed_from_data(data: Dict) -> discord.Embed:
 def is_staff():
     """Permission check decorator for staff-only commands"""
     async def predicate(interaction: discord.Interaction):
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
+            await interaction.response.send_message("⛔ This command can only be used in a server.", ephemeral=True)
+            return False
+            
         if interaction.user.guild_permissions.administrator:
             return True
         if STAFF_ROLE_ID and discord.utils.get(interaction.user.roles, id=STAFF_ROLE_ID):
@@ -1056,23 +1068,26 @@ class MusicPlayer:
 
         self.current_song = song
 
-        FFMPEG_OPTIONS = {
-            "before_options": "-nostdin -loglevel panic",
-            "options": "-vn"
-        }
-
         try:
-            source = discord.FFmpegPCMAudio(song.source, **FFMPEG_OPTIONS)
+            source = discord.FFmpegPCMAudio(
+                song.source,
+                before_options="-nostdin -loglevel panic",
+                options="-vn"
+            )
             source = discord.PCMVolumeTransformer(source, volume=self.volume)
 
             loop = asyncio.get_running_loop()
 
-            self.voice_client.play(
-                source,
-                after=lambda e: loop.call_soon_threadsafe(
-                    asyncio.create_task, self.play_next()
+            if self.voice_client:
+                self.voice_client.play(
+                    source,
+                    after=lambda e: loop.call_soon_threadsafe(
+                        asyncio.create_task, self.play_next()
+                    )
                 )
-            )
+            else:
+                logger.error("No voice client available for playback")
+                await self.play_next()
         except Exception as e:
             logger.error(f"Playback error: {e}")
             await self.play_next()
@@ -2060,35 +2075,32 @@ async def orbit(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed)
 
     except Exception as e:
-        logger.error(f"Error in command: {e}")
-        # If there's an error, we still want to proceed to the next command/logic
-        pass 
-
-@app_commands.checks.cooldown(1, 300, key=lambda i: i.user.id) # 5 min cooldown
-@app_commands.checks.cooldown(1, 300, key=lambda i: i.user.id) # 5 min cooldown
-async def salvage(interaction: discord.Interaction):
-    outcomes = [
-        {"msg": "You found a cluster of old satellite parts!", "credits": 50, "xp": 10},
-        {"msg": "You recovered some frozen fuel from a derelict ship.", "credits": 100, "xp": 20},
-        {"msg": "Your scanners picked up nothing but cosmic dust.", "credits": 0, "xp": 2},
-    ]
-    outcome = random.choice(outcomes)
-    
-    with DatabasePool.get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("UPDATE ships SET credits = credits + %s, xp = xp + %s WHERE user_id = %s",
-                        (outcome['credits'], outcome['xp'], str(interaction.user.id)))
-    
-    embed = discord.Embed(title="🛰️ Salvage Operation", description=outcome['msg'], color=0x7395cc)
-    if outcome['credits'] > 0:
-        embed.add_field(name="Rewards", value=f"💰 {outcome['credits']} Credits\n✨ {outcome['xp']} XP")
-    await interaction.response.send_message(embed=embed)
-    logger.error(f"Error in orbit command: {e}")
-    await interaction.response.send_message("❌ Failed to retrieve orbital data from Mission Control.", ephemeral=True)
+        logger.error(f"Error in orbit command: {e}")
+        await interaction.response.send_message("❌ Failed to retrieve orbital data from Mission Control.", ephemeral=True)
 
 @bot.tree.command(name="salvage", description="Scan nearby space debris for scrap and credits")
 @app_commands.checks.cooldown(1, 300, key=lambda i: i.user.id) # 5 min cooldown
 async def salvage(interaction: discord.Interaction):
+    try:
+        outcomes = [
+            {"msg": "You found a cluster of old satellite parts!", "credits": 50, "xp": 10},
+            {"msg": "You recovered some frozen fuel from a derelict ship.", "credits": 100, "xp": 20},
+            {"msg": "Your scanners picked up nothing but cosmic dust.", "credits": 0, "xp": 2},
+        ]
+        outcome = random.choice(outcomes)
+        
+        with DatabasePool.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE ships SET credits = credits + %s, xp = xp + %s WHERE user_id = %s",
+                            (outcome['credits'], outcome['xp'], str(interaction.user.id)))
+        
+        embed = discord.Embed(title="🛰️ Salvage Operation", description=outcome['msg'], color=0x7395cc)
+        if outcome['credits'] > 0:
+            embed.add_field(name="Rewards", value=f"💰 {outcome['credits']} Credits\n✨ {outcome['xp']} XP")
+        await interaction.response.send_message(embed=embed)
+    except Exception as e:
+        logger.error(f"Error in salvage command: {e}")
+        await interaction.response.send_message("❌ Failed to complete salvage operation.", ephemeral=True)
 @bot.tree.command(name="planet")
 async def planet(interaction: discord.Interaction):
     """Discover a random planet!"""
