@@ -2069,9 +2069,9 @@ async def orbit(interaction: discord.Interaction):
         logger.error(f"Error in orbit command: {e}")
         await interaction.response.send_message("❌ Failed to retrieve orbital data from Mission Control.", ephemeral=True)
 
-@bot.tree.command(name="salvage", description="Scan nearby space debris for scrap and credits")
+@bot.tree.command(name="salvage_light", description="Scan nearby space debris for scrap and credits")
 @app_commands.checks.cooldown(1, 300, key=lambda i: i.user.id) # 5 min cooldown
-async def salvage(interaction: discord.Interaction):
+async def salvage_light(interaction: discord.Interaction):
     try:
         outcomes = [
             {"msg": "You found a cluster of old satellite parts!", "credits": 50, "xp": 10},
