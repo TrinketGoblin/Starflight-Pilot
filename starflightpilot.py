@@ -2006,9 +2006,22 @@ async def mission_report(interaction: discord.Interaction):
             # Delete active mission
             cur.execute("DELETE FROM active_missions WHERE user_id = %s", (interaction.user.id,))
     
+    # Mission rewards
+    credits_earned = random.randint(10, 25)  # Random reward between 10-25 credits
+    
+    # Award credits
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO user_stats (user_id, total_points) 
+                VALUES (%s, %s)
+                ON CONFLICT (user_id) 
+                DO UPDATE SET total_points = user_stats.total_points + EXCLUDED.total_points
+            """, (interaction.user.id, credits_earned))
+    
     embed = discord.Embed(
         title="✅ Mission Complete!",
-        description=f"**Mission:** {active['mission_text']}\n\n*Excellent work, pilot!*",
+        description=f"**Mission:** {active['mission_text']}\n\n*Excellent work, pilot!*\n\n**Reward:** +{credits_earned} credits 💰",
         color=discord.Color.green()
     )
     embed.set_footer(text=f"Completed by {interaction.user.display_name}")
@@ -2017,7 +2030,7 @@ async def mission_report(interaction: discord.Interaction):
     # Track stats and check achievements
     mission_count = AchievementManager.increment_stat(interaction.user.id, "missions_completed")
     await AchievementManager.check_and_award(interaction.user.id, "missions_completed", mission_count, interaction.channel)
-
+    
 @bot.tree.command(name="mission_status")
 async def mission_status(interaction: discord.Interaction):
     """Check your current active mission"""
