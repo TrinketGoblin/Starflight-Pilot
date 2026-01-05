@@ -2161,24 +2161,64 @@ async def launch(interaction: discord.Interaction):
     embed.color = discord.Color.green()
     await message.edit(embed=embed)
 
-@bot.tree.command(name="orbit")
+@bot.tree.command(name="orbit", description="Check how many pilots are currently in orbit")
 async def orbit(interaction: discord.Interaction):
-    """See who's currently orbiting the space station!"""
-    members = [m for m in interaction.guild.members if not m.bot and m.status != discord.Status.offline]
-    
-    embed = discord.Embed(
-        title="🛰️ Current Orbit Status",
-        description=f"**{len(members)}** crew members are currently in orbit!",
-        color=discord.Color.blue()
-    )
-    
-    if len(members) <= 10:
-        crew_list = "\n".join(f"• {m.display_name}" for m in members[:10])
-        embed.add_field(name="Active Crew", value=crew_list, inline=False)
-    
-    embed.set_footer(text=f"Space Station Population • {interaction.guild.name}")
-    await interaction.response.send_message(embed=embed)
+    """
+    Revised Orbit Command: 
+    Fetches the actual count of registered ships from the database.
+    """
+    try:
+        with DatabasePool.get_conn() as conn:
+            with conn.cursor() as cur:
+                # We count how many unique users have registered a ship
+                cur.execute("SELECT COUNT(*) FROM ships")
+                count = cur.fetchone()[0]
+                
+                # Optional: Count users with an 'active' mission in the last hour
+                cur.execute("SELECT COUNT(*) FROM active_missions WHERE started_at > NOW() - INTERVAL '1 hour'")
+                active_now = cur.fetchone()[0]
 
+        embed = discord.Embed(
+            title="🛰️ Orbital Status Report",
+            description=f"There are currently **{count}** registered ships in the sector.",
+            color=discord.Color.blue()
+        )
+        
+        if active_now > 0:
+            embed.add_field(name="Current Activity", value=f"⚡ **{active_now}** pilots are currently on active missions!")
+        else:
+            embed.add_field(name="Current Activity", value="🌌 The sector is currently quiet.")
+
+        # Add the themed footer you use for other commands
+        embed.set_footer(text="Safe flying, pilot! 🚀")
+        
+        await interaction.response.send_message(embed=embed)
+
+    except Exception as e:
+@app_commands.checks.cooldown(1, 300, key=lambda i: i.user.id) # 5 min cooldown
+async def salvage(interaction: discord.Interaction):
+    outcomes = [
+        {"msg": "You found a cluster of old satellite parts!", "credits": 50, "xp": 10},
+        {"msg": "You recovered some frozen fuel from a derelict ship.", "credits": 100, "xp": 20},
+        {"msg": "Your scanners picked up nothing but cosmic dust.", "credits": 0, "xp": 2},
+    ]
+    outcome = random.choice(outcomes)
+    
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE ships SET credits = credits + %s, xp = xp + %s WHERE user_id = %s",
+                        (outcome['credits'], outcome['xp'], str(interaction.user.id)))
+    
+    embed = discord.Embed(title="🛰️ Salvage Operation", description=outcome['msg'], color=0x7395cc)
+    if outcome['credits'] > 0:
+        embed.add_field(name="Rewards", value=f"💰 {outcome['credits']} Credits\n✨ {outcome['xp']} XP")
+    await interaction.response.send_message(embed=embed)
+    logger.error(f"Error in orbit command: {e}")
+    await interaction.response.send_message("❌ Failed to retrieve orbital data from Mission Control.", ephemeral=True)
+
+@bot.tree.command(name="salvage", description="Scan nearby space debris for scrap and credits")
+@app_commands.checks.cooldown(1, 300, key=lambda i: i.user.id) # 5 min cooldown
+async def salvage(interaction: discord.Interaction):
 @bot.tree.command(name="planet")
 async def planet(interaction: discord.Interaction):
     """Discover a random planet!"""
