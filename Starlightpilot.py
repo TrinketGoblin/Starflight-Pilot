@@ -66,7 +66,7 @@ ANNOUNCEMENT_CONFIG = {
     "header": {
         "color": PALETTE['SB'],
         "description": "<@&1454290642174742578>",
-        "image_url": "https://64.media.tumblr.com/fb4527b4d5ba87d89b66a9c7ce471836/01cb3d1ba106fa8c-2e/s1280x1920/e393f5a5a2d9275d944befbe0c0a14f051176874.pnj"
+        "image_url": "https://i.imgur.com/dMQ8Uxj.png"
     },
     "body": {
         "color": PALETTE['LB'],
@@ -74,7 +74,7 @@ ANNOUNCEMENT_CONFIG = {
     "footer": {
         "color": PALETTE['SLB'],
         "description": "🚀 **pls invite ppl to join our discord server and help us grow!**\n\n[Click here](https://discord.google.com/4QzQYeuApB) to join!",
-        "image_url": "https://64.media.tumblr.com/b1087d6d3803689dd69ed77055e45141/01cb3d1ba106fa8c-7a/s1280x1920/b8342d92c350abeee78d7c8b0636625679dfc8ae.pnj"
+        "image_url": "https://i.imgur.com/qhoc8Ub.png"
     }
 }
 
