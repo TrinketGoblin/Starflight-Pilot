@@ -119,10 +119,236 @@ _db_initialized = False
 
 #Database Init and Migration
 
-def migrate_db():
-    """Run database migrations"""
+def init_db():
+    """Initialize all database tables (idempotent & safe)"""
+    global _db_initialized
+    if _db_initialized:
+        return
+    
     with DatabasePool.get_conn() as conn:
-        with conn.cursor() as cur:
+        conn.autocommit = True
+        cur = conn.cursor()
+        try:
+            # CREATE ALL TABLES FIRST
+            # Introductions table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS introductions (
+                    user_id BIGINT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    pronouns TEXT,
+                    age TEXT,
+                    interests TEXT NOT NULL,
+                    about TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Character sheets table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS character_sheets (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    char_name TEXT NOT NULL,
+                    species TEXT NOT NULL,
+                    appearance TEXT NOT NULL,
+                    personality TEXT NOT NULL,
+                    backstory TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, char_name)
+                )
+            """)
+            
+            # User stats table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS user_stats (
+                    user_id BIGINT PRIMARY KEY,
+                    missions_completed INTEGER DEFAULT 0,
+                    encouragements_given INTEGER DEFAULT 0,
+                    encouragements_received INTEGER DEFAULT 0,
+                    plushies_registered INTEGER DEFAULT 0,
+                    facts_learned INTEGER DEFAULT 0,
+                    planets_discovered INTEGER DEFAULT 0,
+                    spacewalks_taken INTEGER DEFAULT 0,
+                    items_purchased INTEGER DEFAULT 0,
+                    ship_upgrades INTEGER DEFAULT 0,
+                    total_items_owned INTEGER DEFAULT 0,
+                    total_credits_earned INTEGER DEFAULT 0,
+                    total_credits INTEGER DEFAULT 0,
+                    salvages_completed INTEGER DEFAULT 0
+                )
+            """)
+
+            # Ships table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ships (
+                    user_id BIGINT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    ship_class TEXT DEFAULT 'Scout',
+                    engine_level INTEGER DEFAULT 1,
+                    weapon_level INTEGER DEFAULT 1,
+                    shield_level INTEGER DEFAULT 1,
+                    health INTEGER DEFAULT 100,
+                    max_health INTEGER DEFAULT 100,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Achievements table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS achievements (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    icon TEXT,
+                    category TEXT,
+                    requirement_type TEXT NOT NULL,
+                    requirement_count INTEGER NOT NULL,
+                    credits INTEGER DEFAULT 0,
+                    hidden BOOLEAN DEFAULT FALSE,
+                    image_id TEXT
+                )
+            """)
+
+            # User achievements table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS user_achievements (
+                    user_id BIGINT NOT NULL,
+                    achievement_id TEXT NOT NULL REFERENCES achievements(id),
+                    progress INTEGER DEFAULT 0,
+                    unlocked BOOLEAN DEFAULT FALSE,
+                    unlocked_at TIMESTAMPTZ,
+                    PRIMARY KEY (user_id, achievement_id)
+                )
+            """)
+            
+            # Shop items table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS shop_items (
+                    item_id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    price INTEGER NOT NULL,
+                    emoji TEXT,
+                    type TEXT DEFAULT 'consumable',
+                    rarity INTEGER DEFAULT 1
+                )
+            """)
+            
+            # Ship upgrades table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ship_upgrades (
+                    upgrade_id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    emoji TEXT,
+                    base_cost INTEGER NOT NULL
+                )
+            """)
+
+            # Plushies table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS plushies (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    name TEXT NOT NULL,
+                    species TEXT NOT NULL,
+                    color TEXT NOT NULL,
+                    personality TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    image_data BYTEA,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, name)
+                )
+            """)
+            
+            # Saved embeds table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS saved_embeds (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    name TEXT NOT NULL,
+                    embed_data JSONB NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, name)
+                )
+            """)
+            
+            # Server backups table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS server_backups (
+                    id SERIAL PRIMARY KEY,
+                    guild_id BIGINT NOT NULL,
+                    backup_data JSONB NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Missions table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS missions (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT,
+                    message TEXT NOT NULL
+                )
+            """)
+            
+            # Active missions table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS active_missions (
+                    user_id BIGINT PRIMARY KEY,
+                    mission_text TEXT NOT NULL,
+                    started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Encouragements table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS encouragements (
+                    id SERIAL PRIMARY KEY,
+                    message TEXT NOT NULL
+                )
+            """)
+            
+            # Space facts table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS space_facts (
+                    id SERIAL PRIMARY KEY,
+                    fact TEXT NOT NULL
+                )
+            """)
+            
+            # Inventory table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS inventory (
+                    user_id BIGINT NOT NULL,
+                    item_id INTEGER NOT NULL,
+                    quantity INTEGER DEFAULT 1,
+                    PRIMARY KEY (user_id, item_id)
+                )
+            """)
+            
+            # Moderator applications table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS mod_applications (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    username TEXT NOT NULL,
+                    age TEXT,
+                    timezone TEXT,
+                    experience TEXT,
+                    why_mod TEXT,
+                    scenarios TEXT,
+                    availability TEXT,
+                    additional TEXT,
+                    status TEXT DEFAULT 'pending',
+                    reviewed_by BIGINT,
+                    reviewed_at TIMESTAMPTZ,
+                    submitted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # NOW RUN MIGRATIONS (Add missing columns to existing tables)
             cur.execute("ALTER TABLE plushies ADD COLUMN IF NOT EXISTS image_data BYTEA;")
             cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS items_purchased INTEGER DEFAULT 0;")
             cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS ship_upgrades INTEGER DEFAULT 0;")
@@ -137,14 +363,12 @@ def migrate_db():
             cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS spacewalks_taken INTEGER DEFAULT 0;")
             cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS planets_discovered INTEGER DEFAULT 0;")
             cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS salvages_completed INTEGER DEFAULT 0;")
-            
-            # Fix achievements table - add missing columns
             cur.execute("ALTER TABLE achievements ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT 0;")
             cur.execute("ALTER TABLE achievements ADD COLUMN IF NOT EXISTS image_id TEXT;")
-            
             cur.execute("ALTER TABLE ships ADD COLUMN IF NOT EXISTS health INTEGER DEFAULT 100;")
             cur.execute("ALTER TABLE ships ADD COLUMN IF NOT EXISTS max_health INTEGER DEFAULT 100;")
             
+            # CREATE INDEXES
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_total_items_owned ON user_stats(total_items_owned);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_total_credits_earned ON user_stats(total_credits_earned);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_missions_completed ON user_stats(missions_completed);")
@@ -153,70 +377,20 @@ def migrate_db():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_facts_learned ON user_stats(facts_learned);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_planets_discovered ON user_stats(planets_discovered);")
             
-            # Initialize default data while cursor is still open
+            # FINALLY, INITIALIZE DEFAULT DATA
             init_default_missions(cur)
             init_default_encouragments(cur)
             init_default_space_facts(cur)
-
-    logger.info("Database migrations completed")
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS encouragements (
-            id TEXT PRIMARY KEY,
-            message TEXT NOT NULL
-        )
-    """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS space_facts (
-            id TEXT PRIMARY KEY,
-            fact TEXT NOT NULL
-        )
-    """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS shop_items (
-            item_id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            description TEXT,
-            price INTEGER NOT NULL,
-            emoji TEXT,
-            type TEXT DEFAULT 'consumable',
-            rarity INTEGER DEFAULT 1
-        )
-    """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS ship_upgrades (
-            upgrade_id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            emoji TEXT,
-            base_cost INTEGER NOT NULL
-        )
-    """)
-    init_ship_upgrades(cur)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS achievements (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            description TEXT NOT NULL,
-            icon TEXT,
-            category TEXT,
-            requirement_type TEXT NOT NULL,
-            requirement_count INTEGER NOT NULL,
-            credits INTEGER DEFAULT 0,
-            hidden BOOLEAN DEFAULT FALSE
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS user_achievements (
-            user_id BIGINT NOT NULL,
-            achievement_id TEXT NOT NULL REFERENCES achievements(id),
-            progress INTEGER DEFAULT 0,
-            unlocked BOOLEAN DEFAULT FALSE,
-            unlocked_at TIMESTAMPTZ,
-            PRIMARY KEY (user_id, achievement_id)
-        )
-    """)
+            init_shop_items(cur)
+            init_ship_upgrades(cur)
+            init_default_achievements(cur)
+            
+        finally:
+            cur.close()
+    
+    _db_initialized = True
+    logger.info("Database initialized")
+    
 def init_default_missions(cur):
     """Inserts default missions into the database if they don't exist."""
     
@@ -1754,8 +1928,7 @@ bot = StarflightBot()
 
 @bot.event
 async def on_ready():
-    migrate_db()
-    init_db()
+    init_db()  # This now handles everything in correct order
     logger.info(f"🚀 Starflight Pilot online as {bot.user}")
     logger.info(f"📋 Registered commands: {[cmd.name for cmd in bot.tree.get_commands()]}")
 
