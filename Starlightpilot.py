@@ -53,7 +53,7 @@ SHOP_ITEMS = {
     7: {'id': 7, 'name': 'Black Hole Detector', 'description': 'Avoid black holes during travel.', 'price': 400, 'emoji': '🕳️'},
     8: {'id': 8, 'name': 'Time Dilation Device', 'description': 'Slow down time for better navigation.', 'price': 450, 'emoji': '⏳'},
     9: {'id': 9, 'name': 'Alien Translator', 'description': 'Communicate with extraterrestrial beings.', 'price': 500, 'emoji': '👽'},
-    "10": {'id': 10, 'name': 'Hyperdrive Booster', 'description': 'Boost your spaceship\'s acceleration.', 'price': 550, 'emoji': '⚡'}
+    10: {'id': 10, 'name': 'Hyperdrive Booster', 'description': 'Boost your spaceship\'s acceleration.', 'price': 550, 'emoji': '⚡'}
 }
 
 SHIP_UPGRADES = {
