@@ -629,21 +629,24 @@ def init_default_missions(cur):
     ]
     
     # Check if any missions already exist (using the new table name)
-    cur.execute("SELECT COUNT(*) FROM missions;")
-    if cur.fetchone()[0] == 0:
-        logger.info("Inserting default missions...")
+    for m_id, m_text in missions_data:
+            cur.execute("""
+                INSERT INTO missions (id, message) 
+                VALUES (%s, %s) 
+                ON CONFLICT (id) DO NOTHING
+            """, (m_id, m_text))
         
         # FIX IMPLEMENTED: Using executemany with (%s, %s) placeholder 
         # to safely pass string values, preventing the UndefinedColumn error.
-        cur.executemany("""
-            INSERT INTO missions (id, description) 
-            VALUES (%s, %s)
-            ON CONFLICT (id) DO NOTHING;
-        """, missions_data)
+            cur.executemany("""
+                INSERT INTO missions (id, description) 
+                VALUES (%s, %s)
+                ON CONFLICT (id) DO NOTHING;
+            """, missions_data)
         
-        logger.info(f"✅ Synced {len(missions_data)} default missions.")
-    else:
-        logger.info("Default missions already present. Skipping initialization.")
+    logger.info(f"✅ Synced {len(missions_data)} default missions.")
+    logger.info("✅ Default missions synced successfully.")
+  
 def init_default_encouragments(cur):
     """Create default encouragements"""
     cur.execute("""
@@ -1197,7 +1200,7 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS missions (
                     id SERIAL PRIMARY KEY,
                     name TEXT NOT NULL,
-                    description TEXT NOT NULL
+                    message TEXT NOT NULL
                 )
             """)
             
