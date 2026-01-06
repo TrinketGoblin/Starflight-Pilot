@@ -1585,7 +1585,7 @@ class EmbedManager:
                     WHERE user_id = %s AND LOWER(name) = LOWER(%s)
                 """, (user_id, name))
                 result = cur.fetchone()
-                return json.loads(result["embed_data"]) if result else None
+                return result["embed_data"] if result else None
     @staticmethod
     def delete_embed(user_id: int, name: str) -> bool:
         try:
