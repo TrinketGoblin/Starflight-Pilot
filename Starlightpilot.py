@@ -450,7 +450,7 @@ def init_default_missions(cur):
         ('226', "📦 Make a 'periscope' to look around corners!"), 
         ('227', "🥨 Eat 'space sticks' (carrot sticks)!"), 
         ('228', "🔭 Spot a 'satellite' (any moving light in the sky)!"), 
-        ('229', "🛸 Imagine you're floating and move your arms slowly!"), 
+        ('229', "🛸 Imagine you're floating and move your arms slowly!"),
         ('230', "📝 Write down one 'Mission Goal' for tomorrow!")
     ]
     
