@@ -287,7 +287,7 @@ def init_db():
             # Missions table
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS missions (
-                    id SERIAL PRIMARY KEY,
+                    id TEXT PRIMARY KEY,  -- Changed from SERIAL to TEXT
                     name TEXT,
                     message TEXT NOT NULL
                 )
@@ -347,8 +347,6 @@ def init_db():
                     submitted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
-            cur.execute("DROP TABLE IF EXISTS missions CASCADE;") # Temporary fix to reset schema
             # NOW RUN MIGRATIONS (Add missing columns to existing tables)
             cur.execute("ALTER TABLE plushies ADD COLUMN IF NOT EXISTS image_data BYTEA;")
             cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS items_purchased INTEGER DEFAULT 0;")
