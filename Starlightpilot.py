@@ -333,10 +333,10 @@ def init_default_missions(cur):
     ('109', "🧺 Carry a laundry basket like it's a heavy moon-sample container!")
     ('110', "🛏️ Jump on the bed (carefully!) to feel 1 second of weightlessness!"), 
     ('111', "🍎 Eat a 'green giant' (a green grape or apple)!"), 
-    ('112', "🔋 Check the battery level on one of your gadgets!")
-    ('113', "🥤 Sip through a straw to practice drinking in zero-g!")
-    ('114', "🛸 Spin a coin and see how long the 'galaxy' rotates!")
-    ('115', "🔦 Shine a light through a colander to create stars on the wall!")
+    ('112', "🔋 Check the battery level on one of your gadgets!"),
+    ('113', "🥤 Sip through a straw to practice drinking in zero-g!"),
+    ('114', "🛸 Spin a coin and see how long the 'galaxy' rotates!"),
+    ('115', "🔦 Shine a light through a colander to create stars on the wall!"),
     ('116', "🧤 Put on socks on your hands and try to fold a piece of paper!"), 
     ('117', "🧼 Wash your hands for 20 seconds to remove 'space germs'!"), 
     ('118', "🚪 Close all the 'airlocks' (doors) in your house!"), 
@@ -451,7 +451,7 @@ def init_default_missions(cur):
     ('227', "🥨 Eat 'space sticks' (carrot sticks)!"), 
     ('228', "🔭 Spot a 'satellite' (any moving light in the sky)!"), 
     ('229', "🛸 Imagine you're floating and move your arms slowly!"), 
-    ('230', "📝 Write down one 'Mission Goal' for tomorrow!") 
+    ('230', "📝 Write down one 'Mission Goal' for tomorrow!")
     """)
 def init_default_encouragments(cur):
     """Create default encouragements"""
