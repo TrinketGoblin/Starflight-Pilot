@@ -137,6 +137,14 @@ def migrate_db():
             cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS spacewalks_taken INTEGER DEFAULT 0;")
             cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS planets_discovered INTEGER DEFAULT 0;")
             cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS salvages_completed INTEGER DEFAULT 0;")
+            
+            # Fix achievements table - add missing columns
+            cur.execute("ALTER TABLE achievements ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE achievements ADD COLUMN IF NOT EXISTS image_id TEXT;")
+            
+            cur.execute("ALTER TABLE ships ADD COLUMN IF NOT EXISTS health INTEGER DEFAULT 100;")
+            cur.execute("ALTER TABLE ships ADD COLUMN IF NOT EXISTS max_health INTEGER DEFAULT 100;")
+            
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_total_items_owned ON user_stats(total_items_owned);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_total_credits_earned ON user_stats(total_credits_earned);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_missions_completed ON user_stats(missions_completed);")
@@ -144,13 +152,7 @@ def migrate_db():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_plushies_registered ON user_stats(plushies_registered);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_facts_learned ON user_stats(facts_learned);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_planets_discovered ON user_stats(planets_discovered);")
-            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS salvages_completed INTEGER DEFAULT 0;")
-            cur.execute("ALTER TABLE ships ADD COLUMN IF NOT EXISTS health INTEGER DEFAULT 100;")
-            cur.execute("ALTER TABLE ships ADD COLUMN IF NOT EXISTS max_health INTEGER DEFAULT 100;")
-            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS salvages_completed INTEGER DEFAULT 0;")
-            cur.execute("ALTER TABLE ships ADD COLUMN IF NOT EXISTS health INTEGER DEFAULT 100;")
-            cur.execute("ALTER TABLE ships ADD COLUMN IF NOT EXISTS max_health INTEGER DEFAULT 100;")
-            # ---------------------------------------
+            
     logger.info("Database migrations completed")
 
     init_default_missions(cur)
