@@ -847,8 +847,37 @@ def init_db():
         cur = conn.cursor()
         try:
             # (Keep all your existing CREATE TABLE calls here: plushies, saved_embeds, etc.)
-            
+            # Introductions table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS introductions (
+                    user_id BIGINT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    pronouns TEXT,
+                    age TEXT,
+                    interests TEXT NOT NULL,
+                    about TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Character sheets table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS character_sheets (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    char_name TEXT NOT NULL,
+                    species TEXT NOT NULL,
+                    appearance TEXT NOT NULL,
+                    personality TEXT NOT NULL,
+                    backstory TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, char_name)
+                )
+            """)
             # UPDATED User stats table
+            
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS user_stats (
                     user_id BIGINT PRIMARY KEY,
@@ -883,9 +912,162 @@ def init_db():
                 )
             """)
             
-            # (Keep the rest of your init_db logic...)
+            # Achievements table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS achievements (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    icon TEXT,
+                    category TEXT,
+                    requirement_type TEXT NOT NULL,
+                    requirement_count INTEGER NOT NULL,
+                    credits INTEGER DEFAULT 0,
+                    hidden BOOLEAN DEFAULT FALSE,
+                    image_id TEXT
+                )
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS user_achievements (
+                    user_id BIGINT NOT NULL,
+                    achievement_id TEXT NOT NULL REFERENCES achievements(id),
+                    progress INTEGER DEFAULT 0,
+                    unlocked BOOLEAN DEFAULT FALSE,
+                    unlocked_at TIMESTAMPTZ,
+                    PRIMARY KEY (user_id, achievement_id)
+                )
+            """)
+            
+            # Shop items table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS shop_items (
+                    item_id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    price INTEGER NOT NULL,
+                    emoji TEXT,
+                    type TEXT DEFAULT 'consumable',
+                    rarity INTEGER DEFAULT 1
+                )
+            """)
+            
+            # Ship upgrades table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ship_upgrades (
+                    upgrade_id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    emoji TEXT,
+                    base_cost INTEGER NOT NULL
+                )
+            """)
+
+            # Plushies table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS plushies (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    name TEXT NOT NULL,
+                    species TEXT NOT NULL,
+                    color TEXT NOT NULL,
+                    personality TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    image_data BYTEA,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, name)
+                )
+            """)
+            
+            # Saved embeds table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS saved_embeds (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    name TEXT NOT NULL,
+                    embed_data JSONB NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, name)
+                )
+            """)
+            
+            # Server backups table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS server_backups (
+                    id SERIAL PRIMARY KEY,
+                    guild_id BIGINT NOT NULL,
+                    backup_data JSONB NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Missions table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS missions (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL
+                )
+            """)
+            
+            # Active missions table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS active_missions (
+                    user_id BIGINT PRIMARY KEY,
+                    mission_text TEXT NOT NULL,
+                    started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Encouragements table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS encouragements (
+                    id SERIAL PRIMARY KEY,
+                    message TEXT NOT NULL
+                )
+            """)
+            
+            # Space facts table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS space_facts (
+                    id SERIAL PRIMARY KEY,
+                    fact TEXT NOT NULL
+                )
+            """)
+            
+            # Inventory table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS inventory (
+                    user_id BIGINT NOT NULL,
+                    item_id INTEGER NOT NULL,
+                    quantity INTEGER DEFAULT 1,
+                    PRIMARY KEY (user_id, item_id)
+                )
+            """)
+            
+            # Moderator applications table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS mod_applications (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    username TEXT NOT NULL,
+                    age TEXT,
+                    timezone TEXT,
+                    experience TEXT,
+                    why_mod TEXT,
+                    scenarios TEXT,
+                    availability TEXT,
+                    additional TEXT,
+                    status TEXT DEFAULT 'pending',
+                    reviewed_by BIGINT,
+                    reviewed_at TIMESTAMPTZ,
+                    submitted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Initialize default data
             init_default_achievements(cur)
             init_shop_items(cur)
+            init_ship_upgrades(cur)
         finally:
             cur.close()
     _db_initialized = True
@@ -1915,6 +2097,146 @@ class ModApplicationModal(discord.ui.Modal, title="Moderator Application"):
             staff_embed.set_thumbnail(url=interaction.user.display_avatar.url)
             staff_embed.set_footer(text="Use /mod_applications to review")
             await staff_channel.send(embed=staff_embed)
+class IntroductionModal(discord.ui.Modal, title="Create Introduction"):
+    name = discord.ui.TextInput(
+        label="Name/Callsign",
+        placeholder="What should we call you?",
+        max_length=50
+    )
+    pronouns = discord.ui.TextInput(
+        label="Pronouns",
+        placeholder="e.g., they/them, she/her, he/him",
+        max_length=30,
+        required=False
+    )
+    age = discord.ui.TextInput(
+        label="Age",
+        placeholder="Optional",
+        max_length=3,
+        required=False
+    )
+    interests = discord.ui.TextInput(
+        label="Interests & Hobbies",
+        placeholder="What do you enjoy? (gaming, art, space, etc.)",
+        style=discord.TextStyle.paragraph,
+        max_length=300
+    )
+    about = discord.ui.TextInput(
+        label="About You",
+        placeholder="Tell us about yourself!",
+        style=discord.TextStyle.paragraph,
+        max_length=500
+    )
+
+    def __init__(self):
+        super().__init__()
+
+    async def on_submit(self, interaction: discord.Interaction):
+        with DatabasePool.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO introductions (user_id, name, pronouns, age, interests, about)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (user_id) 
+                    DO UPDATE SET 
+                        name = EXCLUDED.name,
+                        pronouns = EXCLUDED.pronouns,
+                        age = EXCLUDED.age,
+                        interests = EXCLUDED.interests,
+                        about = EXCLUDED.about,
+                        updated_at = NOW()
+                """, (
+                    interaction.user.id,
+                    self.name.value,
+                    self.pronouns.value or None,
+                    self.age.value or None,
+                    self.interests.value,
+                    self.about.value
+                ))
+        
+        embed = discord.Embed(
+            title="✅ Introduction Saved!",
+            description="Your introduction has been created/updated successfully!",
+            color=discord.Color.green()
+        )
+        embed.add_field(
+            name="📋 Next Steps",
+            value="Use `/introduction_view` to see your introduction, or `/introduction_post` to share it with everyone!",
+            inline=False
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class CharacterSheetModal(discord.ui.Modal, title="Create Character Sheet"):
+    char_name = discord.ui.TextInput(
+        label="Character Name",
+        placeholder="Your character's name",
+        max_length=50
+    )
+    species = discord.ui.TextInput(
+        label="Species/Race",
+        placeholder="Human, Alien, Android, etc.",
+        max_length=50
+    )
+    appearance = discord.ui.TextInput(
+        label="Appearance",
+        placeholder="Describe your character's appearance",
+        style=discord.TextStyle.paragraph,
+        max_length=300
+    )
+    personality = discord.ui.TextInput(
+        label="Personality",
+        placeholder="Describe your character's personality",
+        style=discord.TextStyle.paragraph,
+        max_length=300
+    )
+    backstory = discord.ui.TextInput(
+        label="Backstory",
+        placeholder="Your character's history and background",
+        style=discord.TextStyle.paragraph,
+        max_length=1000
+    )
+
+    def __init__(self, character_name: Optional[str] = None):
+        super().__init__()
+        self.editing_character = character_name
+
+    async def on_submit(self, interaction: discord.Interaction):
+        with DatabasePool.get_conn() as conn:
+            with conn.cursor() as cur:
+                if self.editing_character:
+                    # Update existing character
+                    cur.execute("""
+                        UPDATE character_sheets 
+                        SET species = %s, appearance = %s, personality = %s, 
+                            backstory = %s, updated_at = NOW()
+                        WHERE user_id = %s AND LOWER(char_name) = LOWER(%s)
+                    """, (
+                        self.species.value,
+                        self.appearance.value,
+                        self.personality.value,
+                        self.backstory.value,
+                        interaction.user.id,
+                        self.editing_character
+                    ))
+                    message = f"✅ Character **{self.editing_character}** updated!"
+                else:
+                    # Create new character
+                    cur.execute("""
+                        INSERT INTO character_sheets 
+                        (user_id, char_name, species, appearance, personality, backstory)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (
+                        interaction.user.id,
+                        self.char_name.value,
+                        self.species.value,
+                        self.appearance.value,
+                        self.personality.value,
+                        self.backstory.value
+                    ))
+                    message = f"✅ Character **{self.char_name.value}** created!"
+        
+        await interaction.response.send_message(message, ephemeral=False)
 
 # Commands
 # Achievement Commands
@@ -1943,19 +2265,19 @@ async def achievements(interaction: discord.Interaction, member: Optional[discor
                           ORDER BY a.category, a.requirement_count""", (target.id,))
             locked = cur.fetchall()
     
-    total_points = stats['total_points'] if stats else 0
+    total_credits = stats['total_credits'] if stats else 0
     unlocked_count = len(unlocked)
     
     embed = discord.Embed(
         title=f"🏆 {target.display_name}'s Achievements",
-        description=f"**Total Points:** {total_points} 🌟\n**Unlocked:** {unlocked_count} achievements\n",
+        description=f"**Total credits:** {total_credits} 🌟\n**Unlocked:** {unlocked_count} achievements\n",
         color=discord.Color.gold()
     )
     embed.set_thumbnail(url=target.display_avatar.url)
     
     # Show unlocked achievements
     if unlocked:
-        unlocked_text = "\n".join([f"{a['icon']} **{a['name']}** - {a['description']} (+{a['points']})" for a in unlocked[:5]])
+        unlocked_text = "\n".join([f"{a['icon']} **{a['name']}** - {a['description']} (+{a['credits']})" for a in unlocked[:5]])
         embed.add_field(name="✅ Recent Unlocks", value=unlocked_text, inline=False)
     
     # Show locked achievements
@@ -1971,8 +2293,8 @@ async def leaderboard(interaction: discord.Interaction):
     """View top pilots in the space station"""
     with DatabasePool.get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("""SELECT user_id, total_points FROM user_stats 
-                          ORDER BY total_points DESC LIMIT 10""")
+            cur.execute("""SELECT user_id, total_credits FROM user_stats 
+                          ORDER BY total_credits DESC LIMIT 10""")
             leaders = cur.fetchall()
     
     if not leaders:
@@ -1994,7 +2316,7 @@ async def leaderboard(interaction: discord.Interaction):
         try:
             user = await interaction.guild.fetch_member(leader['user_id'])
             medal = medals[i] if i < 3 else f"{i+1}."
-            leaderboard_text += f"{medal} **{user.display_name}** - {leader['total_points']} points\n"
+            leaderboard_text += f"{medal} **{user.display_name}** - {leader['total_credits']} credits\n"
         except:
             continue
     
@@ -2023,7 +2345,7 @@ async def profile(interaction: discord.Interaction, member: Optional[discord.Mem
         color=discord.Color.blue()
     )
     embed.set_thumbnail(url=target.display_avatar.url)
-    embed.add_field(name="🌟 Total Points", value=str(stats['total_points']), inline=True)
+    embed.add_field(name="🌟 Total credits", value=str(stats['total_credits']), inline=True)
     embed.add_field(name="🏆 Achievements", value=str(ach_count), inline=True)
     embed.add_field(name="🎯 Missions Completed", value=str(stats['missions_completed']), inline=True)
     embed.add_field(name="📡 Encouragements Given", value=str(stats['encouragements_given']), inline=True)
@@ -2042,10 +2364,10 @@ async def balance(interaction: discord.Interaction, member: Optional[discord.Mem
 
     with DatabasePool.get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT total_points FROM user_stats WHERE user_id = %s", (target.id,))
+            cur.execute("SELECT total_credits FROM user_stats WHERE user_id = %s", (target.id,))
             stats = cur.fetchone()
 
-    balance = stats['total_points'] if stats else 0
+    balance = stats['total_credits'] if stats else 0
 
     embed = discord.Embed(
         title=f"💰 {target.display_name}'s Credit Balance",
@@ -2535,10 +2857,10 @@ async def mission_report(interaction: discord.Interaction):
     with DatabasePool.get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO user_stats (user_id, total_points) 
+                INSERT INTO user_stats (user_id, total_credits) 
                 VALUES (%s, %s)
                 ON CONFLICT (user_id) 
-                DO UPDATE SET total_points = user_stats.total_points + EXCLUDED.total_points
+                DO UPDATE SET total_credits = user_stats.total_credits + EXCLUDED.total_credits
             """, (interaction.user.id, credits_earned))
     
     embed = discord.Embed(
@@ -2990,7 +3312,7 @@ async def buy(interaction: discord.Interaction, item_id: int, quantity: int = 1)
     with DatabasePool.get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT total_points FROM user_stats WHERE user_id = %s",
+                "SELECT total_credits FROM user_stats WHERE user_id = %s",
                 (interaction.user.id,)
             )
             row = cur.fetchone()
@@ -3003,17 +3325,17 @@ async def buy(interaction: discord.Interaction, item_id: int, quantity: int = 1)
                 )
 
             cur.execute(
-                """INSERT INTO user_stats (user_id, total_points)
+                """INSERT INTO user_stats (user_id, total_credits)
                    VALUES (%s, %s)
                    ON CONFLICT (user_id)
-                   DO UPDATE SET total_points = user_stats.total_points - %s""",
+                   DO UPDATE SET total_credits = user_stats.total_credits - %s""",
                 (interaction.user.id, balance - cost, cost)
             )
 
     # Use item_id as integer for database
     InventoryManager.add_item(interaction.user.id, item_id, quantity)
 
-    # Fix: Use Achievement, not AchievementManager
+    # Fix: Use Achievement, not Achievement
     purchased = Achievement.increment_stat(
         interaction.user.id, "items_purchased", quantity
     )
@@ -3104,7 +3426,7 @@ async def ship_upgrade(interaction: discord.Interaction, component: str):
     with DatabasePool.get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT total_points FROM user_stats WHERE user_id = %s",
+                "SELECT total_credits FROM user_stats WHERE user_id = %s",
                 (interaction.user.id,)
             )
             balance = cur.fetchone()[0]
@@ -3116,7 +3438,7 @@ async def ship_upgrade(interaction: discord.Interaction, component: str):
                 )
 
             cur.execute(
-                "UPDATE user_stats SET total_points = total_points - %s WHERE user_id = %s",
+                "UPDATE user_stats SET total_credits = total_credits - %s WHERE user_id = %s",
                 (cost, interaction.user.id)
             )
 
@@ -3427,6 +3749,291 @@ async def my_application(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+# =========================
+# INTRODUCTION COMMANDS
+# =========================
+
+@bot.tree.command(name="introduction_create")
+async def introduction_create(interaction: discord.Interaction):
+    """Create or update your introduction"""
+    await interaction.response.send_modal(IntroductionModal())
+
+
+@bot.tree.command(name="introduction_view")
+async def introduction_view(interaction: discord.Interaction, member: Optional[discord.Member] = None):
+    """View your or another member's introduction"""
+    target = member or interaction.user
+    
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT * FROM introductions WHERE user_id = %s
+            """, (target.id,))
+            intro = cur.fetchone()
+    
+    if not intro:
+        if target == interaction.user:
+            return await interaction.response.send_message(
+                "📋 You haven't created an introduction yet! Use `/introduction_create` to make one.",
+                ephemeral=True
+            )
+        else:
+            return await interaction.response.send_message(
+                f"📋 {target.display_name} hasn't created an introduction yet.",
+                ephemeral=True
+            )
+    
+    embed = discord.Embed(
+        title=f"👋 {intro['name']}'s Introduction",
+        color=discord.Color.blue()
+    )
+    embed.set_thumbnail(url=target.display_avatar.url)
+    
+    if intro['pronouns']:
+        embed.add_field(name="Pronouns", value=intro['pronouns'], inline=True)
+    if intro['age']:
+        embed.add_field(name="Age", value=intro['age'], inline=True)
+    
+    embed.add_field(name="🎮 Interests", value=intro['interests'], inline=False)
+    embed.add_field(name="💬 About", value=intro['about'], inline=False)
+    
+    embed.set_footer(text=f"Last updated: {intro['updated_at'].strftime('%Y-%m-%d')}")
+    
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="introduction_post")
+async def introduction_post(interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
+    """Post your introduction to a channel"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT * FROM introductions WHERE user_id = %s
+            """, (interaction.user.id,))
+            intro = cur.fetchone()
+    
+    if not intro:
+        return await interaction.response.send_message(
+            "📋 You haven't created an introduction yet! Use `/introduction_create` first.",
+            ephemeral=True
+        )
+    
+    target = channel or interaction.channel
+    if not isinstance(target, discord.TextChannel):
+        return await interaction.response.send_message(
+            "❌ Can only post to text channels.",
+            ephemeral=True
+        )
+    
+    embed = discord.Embed(
+        title=f"👋 New Crew Member: {intro['name']}",
+        description="Welcome aboard the station!",
+        color=discord.Color.blue()
+    )
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
+    
+    if intro['pronouns']:
+        embed.add_field(name="Pronouns", value=intro['pronouns'], inline=True)
+    if intro['age']:
+        embed.add_field(name="Age", value=intro['age'], inline=True)
+    
+    embed.add_field(name="🎮 Interests", value=intro['interests'], inline=False)
+    embed.add_field(name="💬 About", value=intro['about'], inline=False)
+    
+    embed.set_footer(text=f"Pilot: {interaction.user.display_name}")
+    
+    await target.send(embed=embed)
+    await interaction.response.send_message(
+        f"✅ Introduction posted to {target.mention}!",
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="introduction_delete")
+async def introduction_delete(interaction: discord.Interaction):
+    """Delete your introduction"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                DELETE FROM introductions WHERE user_id = %s
+            """, (interaction.user.id,))
+            deleted = cur.rowcount > 0
+    
+    if deleted:
+        await interaction.response.send_message("✅ Your introduction has been deleted.", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ You don't have an introduction to delete.", ephemeral=True)
+
+
+# =========================
+# CHARACTER SHEET COMMANDS
+# =========================
+
+@bot.tree.command(name="character_create")
+async def character_create(interaction: discord.Interaction):
+    """Create a new character sheet for roleplay"""
+    await interaction.response.send_modal(CharacterSheetModal())
+
+
+@bot.tree.command(name="character_edit")
+async def character_edit(interaction: discord.Interaction, character_name: str):
+    """Edit an existing character sheet"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT * FROM character_sheets 
+                WHERE user_id = %s AND LOWER(char_name) = LOWER(%s)
+            """, (interaction.user.id, character_name))
+            char = cur.fetchone()
+    
+    if not char:
+        return await interaction.response.send_message(
+            f"❌ You don't have a character named **{character_name}**.",
+            ephemeral=True
+        )
+    
+    await interaction.response.send_modal(CharacterSheetModal(character_name))
+
+
+@bot.tree.command(name="character_view")
+async def character_view(interaction: discord.Interaction, owner: discord.Member, character_name: str):
+    """View a character sheet"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT * FROM character_sheets 
+                WHERE user_id = %s AND LOWER(char_name) = LOWER(%s)
+            """, (owner.id, character_name))
+            char = cur.fetchone()
+    
+    if not char:
+        return await interaction.response.send_message(
+            f"❌ {owner.display_name} doesn't have a character named **{character_name}**.",
+            ephemeral=True
+        )
+    
+    embed = discord.Embed(
+        title=f"📜 {char['char_name']}",
+        color=discord.Color.purple()
+    )
+    embed.set_thumbnail(url=owner.display_avatar.url)
+    
+    embed.add_field(name="🧬 Species", value=char['species'], inline=True)
+    embed.add_field(name="👤 Owner", value=owner.mention, inline=True)
+    embed.add_field(name="👁️ Appearance", value=char['appearance'], inline=False)
+    embed.add_field(name="✨ Personality", value=char['personality'], inline=False)
+    embed.add_field(name="📖 Backstory", value=char['backstory'], inline=False)
+    
+    embed.set_footer(text=f"Created: {char['created_at'].strftime('%Y-%m-%d')}")
+    
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="character_list")
+async def character_list(interaction: discord.Interaction, owner: Optional[discord.Member] = None):
+    """List all characters owned by you or another user"""
+    target = owner or interaction.user
+    
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT char_name, species FROM character_sheets 
+                WHERE user_id = %s 
+                ORDER BY created_at DESC
+            """, (target.id,))
+            characters = cur.fetchall()
+    
+    if not characters:
+        if target == interaction.user:
+            return await interaction.response.send_message(
+                "📋 You don't have any characters yet! Use `/character_create` to make one.",
+                ephemeral=True
+            )
+        else:
+            return await interaction.response.send_message(
+                f"📋 {target.display_name} doesn't have any characters yet.",
+                ephemeral=True
+            )
+    
+    embed = discord.Embed(
+        title=f"📜 {target.display_name}'s Characters",
+        description="\n".join(
+            f"• **{char['char_name']}** - {char['species']}"
+            for char in characters
+        ),
+        color=discord.Color.purple()
+    )
+    embed.set_footer(text=f"Total: {len(characters)} character(s)")
+    
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="character_delete")
+async def character_delete(interaction: discord.Interaction, character_name: str):
+    """Delete one of your character sheets"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                DELETE FROM character_sheets 
+                WHERE user_id = %s AND LOWER(char_name) = LOWER(%s)
+            """, (interaction.user.id, character_name))
+            deleted = cur.rowcount > 0
+    
+    if deleted:
+        await interaction.response.send_message(
+            f"✅ Character **{character_name}** has been deleted.",
+            ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(
+            f"❌ You don't have a character named **{character_name}**.",
+            ephemeral=True
+        )
+
+
+@bot.tree.command(name="character_post")
+async def character_post(interaction: discord.Interaction, character_name: str, channel: Optional[discord.TextChannel] = None):
+    """Post a character sheet to a channel"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT * FROM character_sheets 
+                WHERE user_id = %s AND LOWER(char_name) = LOWER(%s)
+            """, (interaction.user.id, character_name))
+            char = cur.fetchone()
+    
+    if not char:
+        return await interaction.response.send_message(
+            f"❌ You don't have a character named **{character_name}**.",
+            ephemeral=True
+        )
+    
+    target = channel or interaction.channel
+    if not isinstance(target, discord.TextChannel):
+        return await interaction.response.send_message(
+            "❌ Can only post to text channels.",
+            ephemeral=True
+        )
+    
+    embed = discord.Embed(
+        title=f"📜 {char['char_name']}",
+        color=discord.Color.purple()
+    )
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
+    
+    embed.add_field(name="🧬 Species", value=char['species'], inline=True)
+    embed.add_field(name="👤 Player", value=interaction.user.mention, inline=True)
+    embed.add_field(name="👁️ Appearance", value=char['appearance'], inline=False)
+    embed.add_field(name="✨ Personality", value=char['personality'], inline=False)
+    embed.add_field(name="📖 Backstory", value=char['backstory'], inline=False)
+    
+    embed.set_footer(text=f"Character by {interaction.user.display_name}")
+    
+    await target.send(embed=embed)
+    await interaction.response.send_message(
+        f"✅ Character sheet posted to {target.mention}!",
+        ephemeral=True
+    )
 @bot.tree.command(name="salvage", description="Scavenge deep space wreckage for loot (risk of ship damage!)")
 @app_commands.checks.cooldown(1, 60, key=lambda i: (i.user.id))
 async def salvage(interaction: discord.Interaction):
@@ -3456,7 +4063,7 @@ async def salvage(interaction: discord.Interaction):
         item_id = random.choice(loot_pool)
         InventoryManager.add_item(interaction.user.id, item_id)
         
-        # Fix: Use Achievement, not AchievementManager
+        # Fix: Use Achievement, not Achievement
         Achievement.increment_stat(interaction.user.id, "salvages_completed")
         
         # Get item name from SHOP_ITEMS
