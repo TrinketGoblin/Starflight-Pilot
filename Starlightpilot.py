@@ -152,10 +152,13 @@ def migrate_db():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_plushies_registered ON user_stats(plushies_registered);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_facts_learned ON user_stats(facts_learned);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_planets_discovered ON user_stats(planets_discovered);")
+            
+            # Initialize default data while cursor is still open
+            init_default_missions(cur)
+            init_default_encouragments(cur)
+            init_default_space_facts(cur)
 
     logger.info("Database migrations completed")
-
-    init_default_missions(cur)
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS encouragements (
@@ -163,16 +166,12 @@ def migrate_db():
             message TEXT NOT NULL
         )
     """)
-    init_default_encouragments(cur)
-
     cur.execute("""
         CREATE TABLE IF NOT EXISTS space_facts (
             id SERIAL PRIMARY KEY,
             fact TEXT NOT NULL
         )
     """)
-    init_default_space_facts(cur)
-
     cur.execute("""
         CREATE TABLE IF NOT EXISTS shop_items (
             item_id SERIAL PRIMARY KEY,
