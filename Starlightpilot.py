@@ -348,6 +348,7 @@ def init_db():
                 )
             """)
             
+            cur.execute("DROP TABLE IF EXISTS missions CASCADE;") # Temporary fix to reset schema
             # NOW RUN MIGRATIONS (Add missing columns to existing tables)
             cur.execute("ALTER TABLE plushies ADD COLUMN IF NOT EXISTS image_data BYTEA;")
             cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS items_purchased INTEGER DEFAULT 0;")
