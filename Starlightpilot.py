@@ -162,19 +162,19 @@ def migrate_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS encouragements (
-            id SERIAL PRIMARY KEY,
+            id TEXT PRIMARY KEY,
             message TEXT NOT NULL
         )
     """)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS space_facts (
-            id SERIAL PRIMARY KEY,
+            id TEXT PRIMARY KEY,
             fact TEXT NOT NULL
         )
     """)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS shop_items (
-            item_id SERIAL PRIMARY KEY,
+            item_id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             description TEXT,
             price INTEGER NOT NULL,
