@@ -73,7 +73,7 @@ ANNOUNCEMENT_CONFIG = {
     },
     "footer": {
         "color": PALETTE['SLB'],
-        "description": "🚀 **pls invite ppl to join our discord server and help us grow!**\n\n[Click here](https://discord.google.com/4QzQYeuApB) to join!",
+        "description": "🚀 **pls invite ppl to join our discord server and help us grow!**\n\n[Click here](https://discord.google.com/4QzQYeuApB) to join!\n\n**Pay for my Ko-Fi** [Support the server](https://ko-fi.com/trinketgoblin96669)",
         "image_url": "https://i.imgur.com/qhoc8Ub.png"
     }
 }
