@@ -627,22 +627,12 @@ def init_default_missions(cur):
         ('229', "🛸 Imagine you're floating and move your arms slowly!"),
         ('230', "📝 Write down one 'Mission Goal' for tomorrow!")
     ]
-    
-    # Check if any missions already exist (using the new table name)
-    for m_id, m_text in missions_data:
+    for mission_id, description in missions_data:
             cur.execute("""
-                INSERT INTO missions (id, message) 
-                VALUES (%s, %s) 
+                INSERT INTO missions (id, message, name) 
+                VALUES (%s, %s, %s) 
                 ON CONFLICT (id) DO NOTHING
-            """, (m_id, m_text))
-        
-        # FIX IMPLEMENTED: Using executemany with (%s, %s) placeholder 
-        # to safely pass string values, preventing the UndefinedColumn error.
-            cur.executemany("""
-                INSERT INTO missions (id, description) 
-                VALUES (%s, %s)
-                ON CONFLICT (id) DO NOTHING;
-            """, missions_data)
+            """, (mission_id, description, f"Mission {mission_id}"))
         
     logger.info(f"✅ Synced {len(missions_data)} default missions.")
     logger.info("✅ Default missions synced successfully.")
