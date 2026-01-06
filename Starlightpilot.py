@@ -1130,8 +1130,6 @@ class BackupManager:
                     target = role_map.get(ovr["name"])
             else:
                 target = guild.get_member(ovr.get("id"))
-                if not target:
-                    target = discord.utils.get(guild.members, name=ovr["name"])
             
             if target:
                 overwrites[target] = discord.PermissionOverwrite.from_pair(
@@ -1163,15 +1161,21 @@ class BackupManager:
                 "channels": []
             }
             for ch in cat.channels:
-                cat_data["channels"].append({
+                channel_data = {
                     "id": ch.id,
                     "name": ch.name,
                     "type": str(ch.type),
                     "overwrites": BackupManager._serialize_overwrites(ch.overwrites)
-                })
+                }
+                # Add description/topic for text channels
+                if isinstance(ch, discord.TextChannel) and ch.topic:
+                    channel_data["topic"] = ch.topic
+                
+                cat_data["channels"].append(channel_data)
             data["categories"].append(cat_data)
         
         return data
+    
     @staticmethod
     def save_to_db(guild_id: int, data: Dict) -> bool:
         try:
@@ -1185,6 +1189,7 @@ class BackupManager:
         except Exception as e:
             logger.error(f"Backup save failed: {e}")
             return False
+    
     @staticmethod
     def load_from_db(guild_id: int) -> Optional[Dict]:
         with DatabasePool.get_conn() as conn:
@@ -1195,32 +1200,30 @@ class BackupManager:
                 """, (guild_id,))
                 result = cur.fetchone()
                 return result["backup_data"] if result else None
+    
     @staticmethod
     async def restore(guild: discord.Guild, data: Dict):
         role_map = {}
         seen_role_ids = set()
-        seen_role_names = set()
         
-        # Restore roles with deduplication
+        # Restore roles with deduplication (only by ID)
         for r_data in data.get("roles", []):
             try:
                 role_id = r_data.get("id")
                 role_name = r_data["name"]
                 
-                if role_id and role_id in seen_role_ids:
+                if not role_id:
+                    logger.warning(f"Skipping role without ID: {role_name}")
+                    continue
+                    
+                if role_id in seen_role_ids:
                     logger.warning(f"Skipping duplicate role ID: {role_name} ({role_id})")
                     continue
-                if role_name in seen_role_names:
-                    logger.warning(f"Skipping duplicate role name: {role_name}")
-                    continue
                 
-                if role_id:
-                    seen_role_ids.add(role_id)
-                seen_role_names.add(role_name)
+                seen_role_ids.add(role_id)
                 
-                existing_role = guild.get_role(role_id) if role_id else None
-                if not existing_role:
-                    existing_role = discord.utils.get(guild.roles, name=role_name)
+                # Only match by ID
+                existing_role = guild.get_role(role_id)
                 
                 if existing_role:
                     await existing_role.edit(
@@ -1244,27 +1247,25 @@ class BackupManager:
                 logger.error(f"Failed to restore role {r_data['name']}: {e}")
 
         seen_cat_ids = set()
-        seen_cat_names = set()
-    # Restore categories with deduplication
+        
+        # Restore categories with deduplication (only by ID)
         for cat_data in data.get("categories", []):
             try:
                 cat_id = cat_data.get("id")
                 cat_name = cat_data["name"]
                 
-                if cat_id and cat_id in seen_cat_ids:
+                if not cat_id:
+                    logger.warning(f"Skipping category without ID: {cat_name}")
+                    continue
+                
+                if cat_id in seen_cat_ids:
                     logger.warning(f"Skipping duplicate category ID: {cat_name}")
                     continue
-                if cat_name in seen_cat_names:
-                    logger.warning(f"Skipping duplicate category name: {cat_name}")
-                    continue
                 
-                if cat_id:
-                    seen_cat_ids.add(cat_id)
-                seen_cat_names.add(cat_name)
+                seen_cat_ids.add(cat_id)
                 
-                existing_cat = guild.get_channel(cat_id) if cat_id else None
-                if not existing_cat:
-                    existing_cat = discord.utils.get(guild.categories, name=cat_name)
+                # Only match by ID
+                existing_cat = guild.get_channel(cat_id)
                 
                 overwrites = BackupManager._deserialize_overwrites(guild, cat_data["overwrites"], role_map)
                 
@@ -1277,41 +1278,55 @@ class BackupManager:
                     logger.info(f"Created new category: {cat_name}")
 
                 seen_ch_ids = set()
-                seen_ch_names = set()
                 
                 for ch_data in cat_data.get("channels", []):
                     try:
                         ch_id = ch_data.get("id")
                         ch_name = ch_data["name"]
+                        ch_topic = ch_data.get("topic")  # Get description if present
                         
-                        if ch_id and ch_id in seen_ch_ids:
+                        if not ch_id:
+                            logger.warning(f"Skipping channel without ID: {ch_name}")
+                            continue
+                        
+                        if ch_id in seen_ch_ids:
                             logger.warning(f"Skipping duplicate channel ID: {ch_name}")
                             continue
-                        if ch_name in seen_ch_names:
-                            logger.warning(f"Skipping duplicate channel name: {ch_name}")
-                            continue
                         
-                        if ch_id:
-                            seen_ch_ids.add(ch_id)
-                        seen_ch_names.add(ch_name)
+                        seen_ch_ids.add(ch_id)
                         
-                        existing_ch = guild.get_channel(ch_id) if ch_id else None
-                        if not existing_ch:
-                            existing_ch = discord.utils.get(guild.channels, name=ch_name)
+                        # Only match by ID
+                        existing_ch = guild.get_channel(ch_id)
                         
                         ch_overwrites = BackupManager._deserialize_overwrites(guild, ch_data["overwrites"], role_map)
                         
                         if existing_ch:
-                            if isinstance(existing_ch, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel, discord.ForumChannel)):
-                                await existing_ch.edit(name=ch_name, category=new_cat, overwrites=ch_overwrites)
-                            else:
-                                await existing_ch.edit(name=ch_name, overwrites=ch_overwrites)
+                            if isinstance(existing_ch, discord.TextChannel):
+                                await existing_ch.edit(
+                                    name=ch_name,
+                                    category=new_cat,
+                                    overwrites=ch_overwrites,
+                                    topic=ch_topic  # Restore description
+                                )
+                            elif isinstance(existing_ch, (discord.VoiceChannel, discord.StageChannel)):
+                                await existing_ch.edit(
+                                    name=ch_name,
+                                    category=new_cat,
+                                    overwrites=ch_overwrites
+                                )
                             logger.info(f"Updated existing channel: {ch_name}")
                         else:
                             if ch_data["type"] == "text":
-                                await new_cat.create_text_channel(name=ch_name, overwrites=ch_overwrites)
+                                await new_cat.create_text_channel(
+                                    name=ch_name,
+                                    overwrites=ch_overwrites,
+                                    topic=ch_topic  # Set description on creation
+                                )
                             elif ch_data["type"] == "voice":
-                                await new_cat.create_voice_channel(name=ch_name, overwrites=ch_overwrites)
+                                await new_cat.create_voice_channel(
+                                    name=ch_name,
+                                    overwrites=ch_overwrites
+                                )
                             logger.info(f"Created new channel: {ch_name}")
                     except Exception as e:
                         logger.error(f"Failed to restore channel {ch_data['name']}: {e}")
