@@ -1,1 +1,1 @@
-worker: python starflightpilot.py
+worker: python Starlightpilot.py

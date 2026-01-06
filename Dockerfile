@@ -15,4 +15,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy bot
 COPY . .
 
-CMD ["python", "starflightpilot.py"]
+CMD ["python", "Starlightpilot.py"]

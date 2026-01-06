@@ -8,9 +8,10 @@ import random
 import io
 import re
 import asyncio
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union, Any
 from datetime import datetime, timezone
 from contextlib import contextmanager
+from pathlib import Path
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from psycopg2.pool import SimpleConnectionPool
@@ -20,201 +21,822 @@ import aiohttp
 from collections import deque
 import tempfile
 
-FFMPEG_OPTIONS = {
-    "before_options": "-nostdin -loglevel panic",
-    "options": "-vn"
+load_dotenv()
+DATABASE_URL = os.getenv("DATABASE_URL")
+TOKEN = os.getenv("DISCORD_TOKEN")
+STAFF_ROLE_ID = int(os.getenv("STAFF_ROLE_ID", "0"))
+IMAGES_DIR = "astronauts"
+PNG_DEFAULT = "astronauts\\1 - Astronaut.png"
+
+def get_image_path(image_id: int, image_type: str = "Astronaut") -> Optional[str]:
+    """Get image path with both ID and type (Astronaut or Alien)"""
+    path = os.path.join(IMAGES_DIR, f"{image_id} - {image_type}.png")
+    return path if os.path.exists(path) else None
+
+
+PALETTE = {
+    'SLB': "#f0f4ff", 'LB':  "#b1c3f9", 'SB':  "#7395cc", 
+    'VB':  "#546bfa", 'PB':  "#3a4ebc", 'VLB': "#303d98", 
+    'MB':  "#28386a", 'DPB': "#222f4f", 'DSB': "#1e155e",
+    'SLY': "#fdf1a3", 'LY':  "#faea84", 'SY':  "#f6e267", 
+    'VY':  "#f1d94b", 'PY':  "#ebcf2f", 'VLY': "#dfc11a", 
+    'MY':  "#bea41a", 'DPY': "#9d8819", 'DSY': "#7e6d17",
 }
 
-# =========================
-# CONFIGURATION
-# =========================
+SHOP_ITEMS = {
+    1: {'id': 1, 'name': 'Fuel Cell', 'description': 'Refuel your spaceship to continue your journey.', 'price': 100, 'emoji': '⛽'},
+    2: {'id': 2, 'name': 'Repair Kit', 'description': 'Fix damages to your spaceship.', 'price': 150, 'emoji': '🛠️'},
+    3: {'id': 3, 'name': 'Stardust', 'description': 'Enhance your spaceship with cosmic energy.', 'price': 200, 'emoji': '✨'},
+    4: {'id': 4, 'name': 'Galactic Map', 'description': 'Unlock new star systems to explore.', 'price': 250, 'emoji': '🗺️'},
+    5: {'id': 5, 'name': 'Cosmic Shield', 'description': 'Protect your spaceship from asteroids.', 'price': 300, 'emoji': '🛡️'},
+    6: {'id': 6, 'name': 'Quantum Engine', 'description': 'Upgrade your spaceship\'s speed.', 'price': 350, 'emoji': '🚀'},
+    7: {'id': 7, 'name': 'Black Hole Detector', 'description': 'Avoid black holes during travel.', 'price': 400, 'emoji': '🕳️'},
+    8: {'id': 8, 'name': 'Time Dilation Device', 'description': 'Slow down time for better navigation.', 'price': 450, 'emoji': '⏳'},
+    9: {'id': 9, 'name': 'Alien Translator', 'description': 'Communicate with extraterrestrial beings.', 'price': 500, 'emoji': '👽'},
+    "10": {'id': 10, 'name': 'Hyperdrive Booster', 'description': 'Boost your spaceship\'s acceleration.', 'price': 550, 'emoji': '⚡'}
+}
 
-load_dotenv()
+SHIP_UPGRADES = {
+    "engine": {'upgrade_id': 1, 'name': 'Engine', 'emoji': '🚀', 'base_cost': 100},
+    "weapon": {'upgrade_id': 2, 'name': 'Weapon', 'emoji': '🔫', 'base_cost': 150},
+    "shield": {'upgrade_id': 3, 'name': 'Shield', 'emoji': '🛡️', 'base_cost': 125}
+}
 
-TOKEN = os.getenv("DISCORD_TOKEN")
-DATABASE_URL = os.getenv("DATABASE_URL")
-STAFF_ROLE_ID = int(os.getenv("STAFF_ROLE_ID", "1454538884682612940"))
-
-# Data files
-MISSIONS_FILE = "missions.json"
-ENCOURAGEMENTS_FILE = "encouragements.json"
-SPACE_FACTS_FILE = "space_facts.json"
-
-# Image directory for astronaut clipart
-IMAGES_DIR = "astronauts"
-
-# Space-themed announcement styling
 ANNOUNCEMENT_CONFIG = {
     "header": {
-        "color": 0x7395cc,
-        "description": "🎛️ **Announcement**",
+        "color": PALETTE['SB'],
+        "description": "<@&1454290642174742578>",
         "image_url": "https://64.media.tumblr.com/fb4527b4d5ba87d89b66a9c7ce471836/01cb3d1ba106fa8c-2e/s1280x1920/e393f5a5a2d9275d944befbe0c0a14f051176874.pnj"
     },
+    "body": {
+        "color": PALETTE['LB'],
+    },
     "footer": {
-        "color": 0xf0f4ff,
-        "description": "🚀 **pls invite ppl to join our discord server and help us grow!**\n\n[Click here](https://discord.gg/4QzQYeuApB) to join!",
+        "color": PALETTE['SLB'],
+        "description": "🚀 **pls invite ppl to join our discord server and help us grow!**\n\n[Click here](https://discord.google.com/4QzQYeuApB) to join!",
         "image_url": "https://64.media.tumblr.com/b1087d6d3803689dd69ed77055e45141/01cb3d1ba106fa8c-7a/s1280x1920/b8342d92c350abeee78d7c8b0636625679dfc8ae.pnj"
     }
 }
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("StarflightPilot")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
+logger = logging.getLogger('Starlightpilot')
 
-# =========================
-# IMAGE HELPER
-# =========================
-
-def get_random_astronaut_image() -> Optional[discord.File]:
-    """Get a random astronaut image from the directory"""
+# Image Helper Functions
+def load_image() -> Optional[Image.Image]:
     try:
         if os.path.exists(IMAGES_DIR):
-            images = [f for f in os.listdir(IMAGES_DIR) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-            if images:
-                filename = random.choice(images)
-                return discord.File(os.path.join(IMAGES_DIR, filename), filename=filename)
+            return Image.open(os.path.join(IMAGES_DIR, PNG_DEFAULT)).convert("RGBA")
+        else:
+            logger.warning("Images directory does not exist.")
+            return None
     except Exception as e:
-        logger.error(f"Failed to get random image: {e}")
-    return None
+        logger.error(f"Error loading image: {e}")
+        return None
 
-# =========================
-# DATABASE CONNECTION POOL
-# =========================
-
+# Database Helper Classes and Functions
 class DatabasePool:
-    """Manages PostgreSQL connection pooling"""
+    """Manages a pool of database connections."""
     _pool: Optional[SimpleConnectionPool] = None
-    
     @classmethod
     def initialize(cls):
         if not DATABASE_URL:
-            raise RuntimeError("DATABASE_URL environment variable not configured")
-        cls._pool = SimpleConnectionPool(1, 10, DATABASE_URL)
-        logger.info("Database connection pool initialized")
-    
+            raise RuntimeError("DATABASE_URL environment variable not set or not reachable.")
+        cls._pool = SimpleConnectionPool(1, 10, dsn=DATABASE_URL)
+        logger.info("Database connection pool initialized.")
     @classmethod
     @contextmanager
     def get_conn(cls):
         if cls._pool is None:
             cls.initialize()
-        
         if cls._pool is None:
-            raise RuntimeError("Database connection pool is not initialized")
-            
+            raise RuntimeError("Database connection pool is not initialized.")
         conn = cls._pool.getconn()
         try:
             yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
         finally:
-            if cls._pool:
-                cls._pool.putconn(conn)
-
-
+            cls._pool.putconn(conn)
 _db_initialized = False
 
-# =========================
-# DATABASE INITIALIZATION
-# =========================
-
-# Shop items configuration
-SHOP_ITEMS = {
-    "fuel": {"name": "Fuel Cell", "description": "Powers your ship's engines", "price": 50, "emoji": "⛽", "type": "consumable", "rarity": 1},
-    "repair_kit": {"name": "Repair Kit", "description": "Fixes ship damage", "price": 75, "emoji": "🔧", "type": "consumable", "rarity": 1},
-    "stardust": {"name": "Stardust", "description": "Rare cosmic material", "price": 200, "emoji": "✨", "type": "material", "rarity": 2},
-    "alien_artifact": {"name": "Alien Artifact", "description": "Mysterious ancient technology", "price": 500, "emoji": "🗿", "type": "collectible", "rarity": 3},
-    "quantum_core": {"name": "Quantum Core", "description": "Advanced ship component", "price": 1000, "emoji": "💎", "type": "upgrade", "rarity": 4},
-    "nebula_crystal": {"name": "Nebula Crystal", "description": "Beautiful and valuable", "price": 750, "emoji": "🔮", "type": "collectible", "rarity": 3},
-    "plasma_cannon": {"name": "Plasma Cannon", "description": "Powerful weapon upgrade", "price": 1500, "emoji": "🔫", "type": "upgrade", "rarity": 4},
-    "shield_booster": {"name": "Shield Booster", "description": "Enhanced protection", "price": 1200, "emoji": "🛡️", "type": "upgrade", "rarity": 4},
-}
-
-SHIP_UPGRADES = {
-    "engine": {"name": "Engine", "emoji": "🚀", "base_cost": 100},
-    "weapon": {"name": "Weapons", "emoji": "🔫", "base_cost": 150},
-    "shield": {"name": "Shields", "emoji": "🛡️", "base_cost": 125},
-}
-
-def init_default_achievements(cur):
-    """Create default space-themed achievements"""
-    achievements = [
-        # Mission achievements
-        ("first_mission", "First Mission", "Complete your first space mission", "🎯", "explorer", "missions_completed", 1, 5, False),
-        ("mission_specialist", "Mission Specialist", "Complete 25 missions", "🛸", "explorer", "missions_completed", 25, 50, False),
-        ("veteran_pilot", "Veteran Pilot", "Complete 100 missions", "👨‍🚀", "explorer", "missions_completed", 100, 200, False),
-        ("mission_master", "Mission Master", "Complete 250 missions", "🏅", "explorer", "missions_completed", 250, 500, False),
-        
-        # Encouragement achievements
-        ("first_contact", "First Contact", "Send your first encouragement", "📡", "social", "encouragements_given", 1, 5, False),
-        ("ambassador", "Ambassador", "Encourage 20 crew members", "🤝", "social", "encouragements_given", 20, 40, False),
-        ("galactic_friend", "Galactic Friend", "Encourage 50 crew members", "💫", "social", "encouragements_given", 50, 100, False),
-        ("beloved_crew", "Beloved Crew", "Receive 15 encouragements", "⭐", "social", "encouragements_received", 15, 30, False),
-        
-        # Plushie achievements
-        ("first_companion", "First Companion", "Register your first plushie", "🧸", "collector", "plushies_registered", 1, 5, False),
-        ("plushie_fleet", "Plushie Fleet", "Register 10 plushies", "🎪", "collector", "plushies_registered", 10, 50, False),
-        ("curator", "Curator", "Register 25 plushies", "🛍️", "collector", "plushies_registered", 25, 100, False),
-        
-        # Knowledge achievements
-        ("space_cadet", "Space Cadet", "Learn 10 space facts", "📚", "scholar", "facts_learned", 10, 20, False),
-        ("astronomer", "Astronomer", "Learn 50 space facts", "🔭", "scholar", "facts_learned", 50, 100, False),
-        ("astrophysicist", "Astrophysicist", "Learn 100 space facts", "👩‍🔬", "scholar", "facts_learned", 100, 200, False),
-        
-        # Exploration achievements
-        ("planet_hunter", "Planet Hunter", "Discover 10 planets", "🪐", "explorer", "planets_discovered", 10, 20, False),
-        ("spacewalker", "Spacewalker", "Take 15 spacewalks", "🧑‍🚀", "explorer", "spacewalks_taken", 15, 30, False),
-        
-        # Economy achievements
-        ("first_purchase", "First Purchase", "Buy your first item", "💰", "merchant", "items_purchased", 1, 5, False),
-        ("savvy_shopper", "Savvy Shopper", "Purchase 25 items", "🛍️", "merchant", "items_purchased", 25, 50, False),
-        ("collector_supreme", "Collector Supreme", "Own 50+ items in inventory", "📦", "merchant", "total_items_owned", 50, 100, False),
-        ("ship_engineer", "Ship Engineer", "Upgrade your ship 10 times", "🔧", "engineer", "ship_upgrades", 10, 75, False),
-        ("master_engineer", "Master Engineer", "Upgrade your ship 25 times", "⚙️", "engineer", "ship_upgrades", 25, 150, False),
-        
-        # Hidden achievements
-        ("secret_astronaut", "Secret Astronaut", "Mission Control knows your call sign", "🎖️", "hidden", "missions_completed", 500, 1000, True),
-        ("cosmic_legend", "Cosmic Legend", "A true space pioneer", "🌌", "hidden", "encouragements_given", 100, 500, True),
-        ("millionaire", "Space Millionaire", "Accumulate 10,000 credits", "💎", "hidden", "total_credits_earned", 10000, 2000, True),
-    ]
-    
-    for ach in achievements:
-        cur.execute("""INSERT INTO achievements (id, name, description, icon, category, requirement_type, requirement_count, points, hidden)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING""", ach)
-
-def init_shop_items(cur):
-    """Populate shop items table"""
-    for item_id, data in SHOP_ITEMS.items():
-        cur.execute("""
-            INSERT INTO shop_items (id, name, description, price, emoji, type, rarity)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (id) DO UPDATE SET 
-                name = EXCLUDED.name,
-                description = EXCLUDED.description,
-                price = EXCLUDED.price,
-                emoji = EXCLUDED.emoji,
-                type = EXCLUDED.type,
-                rarity = EXCLUDED.rarity
-        """, (item_id, data['name'], data['description'], data['price'], data['emoji'], data['type'], data['rarity']))
+#Database Init and Migration
 
 def migrate_db():
     """Run database migrations"""
     with DatabasePool.get_conn() as conn:
         with conn.cursor() as cur:
-            # Existing migrations
             cur.execute("ALTER TABLE plushies ADD COLUMN IF NOT EXISTS image_data BYTEA;")
             cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS items_purchased INTEGER DEFAULT 0;")
             cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS ship_upgrades INTEGER DEFAULT 0;")
             cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS total_items_owned INTEGER DEFAULT 0;")
             cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS total_credits_earned INTEGER DEFAULT 0;")
-            
-            # --- NEW SALVAGE & DAMAGE MIGRATIONS ---
+            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS missions_completed INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS encouragements_given INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS encouragements_received INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS plushies_registered INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS facts_learned INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS missions_failed INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS spacewalks_taken INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS planets_discovered INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS salvages_completed INTEGER DEFAULT 0;")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_total_items_owned ON user_stats(total_items_owned);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_total_credits_earned ON user_stats(total_credits_earned);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_missions_completed ON user_stats(missions_completed);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_encouragements_given ON user_stats(encouragements_given);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_plushies_registered ON user_stats(plushies_registered);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_facts_learned ON user_stats(facts_learned);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_planets_discovered ON user_stats(planets_discovered);")
+            cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS salvages_completed INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE ships ADD COLUMN IF NOT EXISTS health INTEGER DEFAULT 100;")
+            cur.execute("ALTER TABLE ships ADD COLUMN IF NOT EXISTS max_health INTEGER DEFAULT 100;")
             cur.execute("ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS salvages_completed INTEGER DEFAULT 0;")
             cur.execute("ALTER TABLE ships ADD COLUMN IF NOT EXISTS health INTEGER DEFAULT 100;")
             cur.execute("ALTER TABLE ships ADD COLUMN IF NOT EXISTS max_health INTEGER DEFAULT 100;")
             # ---------------------------------------
     logger.info("Database migrations completed")
 
+    init_default_missions(cur)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS encouragements (
+            id SERIAL PRIMARY KEY,
+            message TEXT NOT NULL
+        )
+    """)
+    init_default_encouragments(cur)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS space_facts (
+            id SERIAL PRIMARY KEY,
+            fact TEXT NOT NULL
+        )
+    """)
+    init_default_space_facts(cur)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS shop_items (
+            item_id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            price INTEGER NOT NULL,
+            emoji TEXT,
+            type TEXT DEFAULT 'consumable',
+            rarity INTEGER DEFAULT 1
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ship_upgrades (
+            upgrade_id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            emoji TEXT,
+            base_cost INTEGER NOT NULL
+        )
+    """)
+    init_ship_upgrades(cur)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS achievements (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL,
+            icon TEXT,
+            category TEXT,
+            requirement_type TEXT NOT NULL,
+            requirement_count INTEGER NOT NULL,
+            credits INTEGER DEFAULT 0,
+            hidden BOOLEAN DEFAULT FALSE
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_achievements (
+            user_id BIGINT NOT NULL,
+            achievement_id TEXT NOT NULL REFERENCES achievements(id),
+            progress INTEGER DEFAULT 0,
+            unlocked BOOLEAN DEFAULT FALSE,
+            unlocked_at TIMESTAMPTZ,
+            PRIMARY KEY (user_id, achievement_id)
+        )
+    """)
+def init_default_missions(cur):
+    """Create default missions"""
+    cur.execute("""
+    INSERT INTO missions (name, description)
+    VALUES 
+    ('1', "🎨 Color a picture of a planet and share it in chat!"),
+    ('2', "💧 Drink a glass of moon juice (water) to stay hydrated!"),
+    ('3', "🌟 Count 10 stars (or anything sparkly) around you!"),
+    ('4', "📚 Read a chapter of your favorite space book!"),
+    ('5', "🧸 Give your favorite plushie a big hug!"),
+    ('6', "🎵 Listen to a calming lullaby or space music!"),
+    ('7', "🌙 Take a 10-minute nap to recharge your energy!"),
+    ('8', "🍪 Have a healthy snack from the space galley!"),
+    ('9', "🚀 Do 5 jumping jacks like you're in zero gravity!"),
+    ('10', "✨ Tell someone something nice about them!"),
+    ('11', "🌌 Draw what you think a nebula looks like!"),
+    ('12', "🛌 Make your bed like you're preparing your space pod!"),
+    ('13', "🎮 Play with your favorite toy for 15 minutes!"),
+    ('14', "🌠 Look out the window and find 3 interesting things!"),
+    ('15', "💫 Practice writing your name in 'space letters'!"),
+    ('16', "🧃 Make yourself a special 'astronaut drink'!"),
+    ('17', "🎪 Do a silly dance to make your crewmates smile!"),
+    ('18', "🌍 Learn one new fact about space or planets!"),
+    ('19', "🛸 Build something with blocks or craft supplies!"),
+    ('20', "⭐ Tell someone about your day and how you're feeling!"),
+    ('21', "🔭 Design a flag for your own personal moon base!"),
+    ('22', "🪐 Use a spoon as a 'space shovel' to move small objects!"),
+    ('23', "🛰️ Check your 'oxygen levels' by taking three slow, deep breaths!"),
+    ('24', "☄️ Spot a 'shooting star' by finding something that moves fast outside!"),
+    ('25', "🌑 Sit in the darkest room in your house and imagine you're in deep space!"),
+    ('26', "🌌 Create a constellation by drawing dots on paper and connecting them!"),
+    ('27', "📡 Send a 'radio signal' by humming a low tune for 30 seconds!"),
+    ('28', "🌋 Research a volcano on another planet, like Olympus Mons!"),
+    ('29', "🧼 Sanitize your flight deck by wiping down your desk or table!"),
+    ('30', "👣 Walk in slow motion like you are on a high-gravity planet!"),
+    ('31', "🧩 Complete a puzzle to repair the ship's navigation computer!"),
+    ('32', "🥪 Cut your sandwich into the shape of a star or a rocket!"),
+    ('33', "🎒 Pack a 'survival bag' with 5 things you'd take to Mars!"),
+    ('34', "🔦 Use a flashlight to make signals on the ceiling!"),
+    ('35', "🧤 Put on gloves and try to pick up coins like an astronaut in a spacesuit!"),
+    ('36', "🌞 Stand in a sunny spot for 2 minutes to solar-charge your batteries!"),
+    ('37', "⏲️ Set a timer for 60 seconds and sit perfectly still like a frozen comet!"),
+    ('38', "🧊 Watch an ice cube melt and imagine it's a comet passing the sun!"),
+    ('39', "🎵 Compose a 3-note 'alien language' greeting!"),
+    ('40', "🧹 Sweep the stardust off the floor in one room!"),
+    ('41', "📖 Find a word in a book that starts with 'Z' for Zenith!"),
+    ('42', "🧘 Do a tree pose to maintain balance in zero gravity!"),
+    ('43', "🥛 Mix a 'nebula swirl' by adding a drop of juice to your water!"),
+    ('44', "🤖 Talk like a robot for the next 5 minutes!"),
+    ('45', "🌓 Draw the moon exactly as it looks in the sky tonight!"),
+    ('46', "🧸 Organize your plushies into a 'crew photo'!"),
+    ('47', "🔋 Lay flat on the floor for 5 minutes to let your systems recharge!"),
+    ('48', "🧂 Sprinkle some 'space salt' (glitter or sand) on a craft project!"),
+    ('49', "🔭 Peer through a cardboard tube to spot distant galaxies!"),
+    ('50', "🛸 Hide an 'alien artifact' for someone else to find later!"),
+    ('51', "📦 Build a moon rover using only items from your recycling bin!"),
+    ('52', "🎈 Blow up a balloon and let it go to see 'rocket propulsion'!"),
+    ('53', "👟 Tie your shoes tight for a safe 'spacewalk'!"),
+    ('54', "🍎 Eat an 'asteroid' (a piece of fruit) to stay energized!"),
+    ('55', "🤫 Whisper like you're sending a secret message to Mission Control!"),
+    ('56', "🛸 Invent a dance that an alien from Saturn would do!"),
+    ('57', "🌌 Name three things that are black like the deep void of space!"),
+    ('58', "🖇️ Chain 10 paperclips together to make a 'space station' antenna!"),
+    ('59', "🧥 Put on your 'spacesuit' (jacket) as fast as you can!"),
+    ('60', "💤 Close your eyes and imagine what the Earth looks like from above!"),
+    ('61', "🖼️ Draw a portrait of your favorite alien friend!"),
+    ('62', "🥄 Balance a 'moon rock' (grape or marble) on a spoon while walking!"),
+    ('63', "🛁 Take a 'galactic bath' or shower to wash off the cosmic dust!"),
+    ('64', "🧦 Sort your socks into 'binary pairs'!"),
+    ('65', "🕰️ Check the 'Stardate' (current time) and write it down!"),
+    ('66', "🌡️ Check the temperature outside your space pod!"),
+    ('67', "🥤 Blow bubbles in your drink to simulate a boiling star!"),
+    ('68', "📝 Write a 'Captain's Log' entry about your day so far!"),
+    ('69', "🏗️ Build the tallest tower possible with blocks or pillows!"),
+    ('70', "👋 Wave at the sky to greet the astronauts on the ISS!"),
+    ('71', "🎶 Hum the theme song to your favorite space movie!"),
+    ('72', "🏃 Run in place for 30 seconds to test your thrusters!"),
+    ('73', "🥨 Have a 'crunchy comet' (pretzel) for a snack!"),
+    ('74', "🧱 Use LEGOs to build a communication dish!"),
+    ('75', "🛑 Practice a 'manual override' by stopping whatever you're doing immediately!"),
+    ('76', "🤸 Do a somersault or roll to simulate a tumbling asteroid!"),
+    ('77', "🥛 Drink a glass of white milk or soy milk like 'star fuel'!"),
+    ('78', "🎨 Paint a rock to look like a tiny planet!"),
+    ('79', "🌿 Water a 'space plant' (houseplant) so it can grow!"),
+    ('80', "🕶️ Put on sunglasses to protect your eyes from solar flares!"),
+    ('81', "📎 Make a 'constellation' on your desk using paperclips!"),
+    ('82', "💨 Blow a feather or piece of paper across the table using 'solar wind'!"),
+    ('83', "🟡 Find something spherical like a planet in your room!"),
+    ('84', "🔴 Find something red like the surface of Mars!"),
+    ('85', "⚪ Find something white like the icy moon Europa!"),
+    ('86', "🔵 Find something blue like the gas giant Neptune!"),
+    ('87', "🟠 Find something orange like a glowing sun!"),
+    ('88', "🔭 Look at a map and find a place you'd like to 'land'!"),
+    ('89', "🛸 Use a frisbee or plate as a flying saucer!"),
+    ('90', "👣 Walk heel-to-toe in a straight line to test your equilibrium!"),
+    ('91', "✨ Count how many lights are in the room you're in!"),
+    ('92', "🛌 Tightly tuck yourself into a blanket like a sleeping astronaut!"),
+    ('93', "🔊 Make a 'whoosh' sound every time you walk through a door!"),
+    ('94', "🧤 Try to tie your shoes while wearing thick mittens!"),
+    ('95', "🥫 Organize the 'food rations' in your kitchen pantry!"),
+    ('96', "🕯️ Watch a candle flame (with supervision) and think of star fire!"),
+    ('97', "🛸 Practice your 'tractor beam' by picking up toys without using hands!"),
+    ('98', "🪑 Sit under a table and pretend it's your cramped space capsule!"),
+    ('99', "🪁 Make a small paper plane and see how far it 'glides'!"),
+    ('100', "🌑 Paint your fingernails (or one nail) 'space black'!"),
+    ('101', "🥛 Make a 'milky way' milkshake or smoothie!"),
+    ('102', "🔔 Ring a bell or make a 'ding' sound for every successful task!"),
+    ('103', "📸 Take a 'selfie' in your astronaut gear!"),
+    ('104', "🗺️ Draw a map of your house as if it were a space station!"),
+    ('105', "🧵 Use a string to measure the 'circumference' of your head!"),
+    ('106', "🧠 Learn the names of the 8 planets in order!")
+    ('107', "📣 Give a 10-second speech as if you just landed on the moon!")
+    ('108', "💧 Use a dropper or straw to move 'liquid fuel' between two cups!")
+    ('109', "🧺 Carry a laundry basket like it's a heavy moon-sample container!")
+    ('110', "🛏️ Jump on the bed (carefully!) to feel 1 second of weightlessness!"), 
+    ('111', "🍎 Eat a 'green giant' (a green grape or apple)!"), 
+    ('112', "🔋 Check the battery level on one of your gadgets!")
+    ('113', "🥤 Sip through a straw to practice drinking in zero-g!")
+    ('114', "🛸 Spin a coin and see how long the 'galaxy' rotates!")
+    ('115', "🔦 Shine a light through a colander to create stars on the wall!")
+    ('116', "🧤 Put on socks on your hands and try to fold a piece of paper!"), 
+    ('117', "🧼 Wash your hands for 20 seconds to remove 'space germs'!"), 
+    ('118', "🚪 Close all the 'airlocks' (doors) in your house!"), 
+    ('119', "💤 Take a 5-minute 'power nap' in your commander's chair!"), 
+    ('120', "🧗 Climb onto a couch or chair to reach the 'summit' of a space cliff!"), 
+    ('121', "🧮 Count backward from 20 to 0 for a perfect liftoff!"), 
+    ('122', "🎭 Mimic the sound of a computer 'beep-boop'!"), 
+    ('123', "🥣 Eat a bowl of 'cereal stars'!"), 
+    ('124', "🥛 Make a 'black hole' by stirring chocolate into milk!"), 
+    ('125', "📦 Create a 'space helmet' out of a paper bag!"), 
+    ('126', "🎈 Rub a balloon on your hair to create 'static cosmic energy'!"), 
+    ('127', "🥨 Make a 'space station' out of pretzels and marshmallows!"), 
+    ('128', "🌠 Make a wish on the first 'star' you see (even if it's a lamp)!"), 
+    ('129', "🧳 Pack a 'discovery kit' with a magnifying glass and a notebook!"), 
+    ('130', "🎤 Record a message for future civilizations!"), 
+    ('131', "🛸 Pretend a hula hoop is the rings of Saturn!"), 
+    ('132', "🌌 Put on dark clothes to blend into the night sky!"), 
+    ('133', "🧊 Put an ice cube in your drink and call it an 'asteroid fragment'!"), 
+    ('134', "📜 Write a 'Peace Treaty' for an alien race!"), 
+    ('135', "🚶 Walk backward for 10 steps to simulate a reverse thruster!"), 
+    ('136', "🔭 Check the weather report for 'atmospheric conditions'!"), 
+    ('137', "🌱 Plant a 'moon seed' (any seed) in a small pot or cup!"), 
+    ('138', "🔋 Sit perfectly still for 1 minute to conserve power!"), 
+    ('139', "🍪 Bake 'crater cookies' with thumbprint indentations!"), 
+    ('140', "💧 Make sure your 'hydration pack' (water bottle) is full!"), 
+    ('141', "🛰️ Spin around in a swivel chair like a satellite in orbit!"), 
+    ('142', "🧤 Use a pair of tongs to pick up 'hazardous space waste' (trash)!"), 
+    ('143', "🛸 Make a 'UFO' out of two paper plates stapled together!"), 
+    ('144', "🌠 Draw a picture of a shooting star and give it to a friend!"), 
+    ('145', "🥛 Use a straw to make 'craters' in a bowl of yogurt!"), 
+    ('146', "🧱 Build a 'launch pad' for your favorite toy!"), 
+    ('147', "💤 Practice 'deep space hibernation' by lying still for 3 minutes!"), 
+    ('148', "🔦 Use a flashlight to find the 'darkest corner' of your room!"), 
+    ('149', "🧼 Clean your 'viewscreen' (glasses or a window)!"), 
+    ('150', "🚀 Do 10 lunges to strengthen your 'moon-walking' legs!"), 
+    ('151', "📏 Measure how high you can jump in 'Earth gravity'!"), 
+    ('152', "🍎 Eat a 'red dwarf' (a cherry or strawberry)!"), 
+    ('153', "🛸 Call a friend and ask them what their 'coordinates' are!"), 
+    ('154', "🌌 Draw a map of the stars you can see from your bed!"), 
+    ('155', "🧶 Use yarn to create a 'laser grid' in a doorway!"), 
+    ('156', "🥛 Drink 'comet juice' (ice water with a lemon slice)!"), 
+    ('157', "🚀 Give a 'thumbs up' to the next plane you see flying by!"), 
+    ('158', "🧩 Put together 5 pieces of a puzzle with your non-dominant hand!"), 
+    ('159', "🛸 Toss a 'moon rock' (balled up sock) into a 'crater' (laundry basket)!"), 
+    ('160', "📢 Announce 'T-minus 10 minutes to snack time'!"), 
+    ('161', "🌑 Wear something completely black today!"), 
+    ('162', "🧘 Balance on one leg for 15 seconds like a tripod lander!"), 
+    ('163', "🧴 Apply 'sunshield' (lotion) to your arms!"), 
+    ('164', "🛸 Make a 'flying saucer' sound with your mouth!"), 
+    ('165', "🌌 Stare at a dark piece of paper and 'see' the stars!"), 
+    ('166', "🛰️ 'Orbit' around your kitchen island or table 5 times!"), 
+    ('167', "🔋 Check all the 'energy cells' (light switches) in your house!"), 
+    ('168', "🧸 Tell your plushie a story about a trip to Jupiter!"), 
+    ('169', "🧼 Scrub your 'flight deck' (fingernails)!"), 
+    ('170', "📦 Turn a shoebox into a 'specimen container'!"), 
+    ('171', "🥨 Eat some 'crunchy moon dust' (crackers)!"), 
+    ('172', "🔭 Look up a picture of the Pillars of Creation!"), 
+    ('173', "🛸 Pretend you're being beamed up while standing under a lamp!"), 
+    ('174', "📝 Write your name using only dots (like stars)!"), 
+    ('175', "🚪 Check that all 'cargo bay doors' (cabinets) are closed!"), 
+    ('176', "🥛 Make 'galaxy toast' using food coloring in milk!"), 
+    ('177', "🚀 Do 3 'rocket launches' (jump as high as you can)!"), 
+    ('178', "🎒 Re-organize your 'mission supplies' (backpack)!"), 
+    ('179', "💤 Listen to 'brown noise' to simulate the hum of a spacecraft!"), 
+    ('180', "🔦 Shine a light through a glass of water to see a 'nebula'!"), 
+    ('181', "🧤 Wear two pairs of socks to feel 'moon boots'!"), 
+    ('182', "🪐 Draw the rings of Saturn using a crayon or marker!"), 
+    ('183', "🧊 Put an ice cube down your back to feel the 'cold of space'!"), 
+    ('184', "🔭 Find the North Star in a picture or the sky!"), 
+    ('185', "🛸 Use a colander as a 'communication helmet'!"), 
+    ('186', "🍪 Eat a 'round planet' cookie!"), 
+    ('187', "🔊 Shout 'Blast off!' at the start of your next task!"), 
+    ('188', "🧼 Wipe down your 'instrument panel' (keyboard or remote)!"), 
+    ('189', "🛰️ Tape a 'sensor' (sticky note) to a wall to monitor the room!"), 
+    ('190', "📏 Measure the 'distance' from your bed to the door in footsteps!"), 
+    ('191', "🌌 Decorate your 'command center' with one new drawing!"), 
+    ('192', "🧱 Build a 'stairway to the stars' with books!"), 
+    ('193', "🛸 Use a pot lid as a 'shield' against space debris!"), 
+    ('194', "📝 Write a letter to an astronaut and send it (or save it)!"), 
+    ('195', "🧘 Stretch your arms out wide like a 'solar array'!"), 
+    ('196', "🔋 Close your 'eye shutters' for 60 seconds to rest!"), 
+    ('197', "🥛 Drink a glass of 'pulsar punch' (fruit juice)!"), 
+    ('198', "🚀 Do 5 'zero-g' pushups (on your knees)!"), 
+    ('199', "🛸 Pretend your bed is a 'stasis pod'!"), 
+    ('200', "🌌 Paint a 'galaxy' on a piece of cardboard!"), 
+    ('201', "🧼 Wash your 'specimen collection' (your favorite plastic toys)!"), 
+    ('202', "📦 Use a toilet paper roll to make a 'rocket booster'!"), 
+    ('203', "🥨 Use pretzel sticks to build a 'star' shape!"), 
+    ('204', "🔭 Research what a 'Black Hole' actually is!"), 
+    ('205', "🛸 Make a 'whirring' sound while you walk!"), 
+    ('206', "📝 List 5 things you'd miss about Earth if you lived on Mars!"), 
+    ('207', "🧳 Pack a 'lunar lunch' to eat later!"), 
+    ('208', "🔋 Give yourself a 'reboot' by splashing water on your face!"), 
+    ('209', "🥛 Drink 'neutron star' water (extra cold!)!"), 
+    ('210', "🚀 Practice your 'landing' by jumping off a low step safely!"), 
+    ('211', "🛸 Use a blanket as a 'solar sail' and run with it!"), 
+    ('212', "🌌 Tell a 'space joke' to someone!"), 
+    ('213', "🧼 Polish your 'helmet' (mirror) until it shines!"), 
+    ('214', "📦 Hide inside a box and pretend you're in a 'cargo hold'!"), 
+    ('215', "🥨 Eat 5 'asteroid bits' (nuts or seeds)!"), 
+    ('216', "🔭 Find a constellation app and look at the sky!"), 
+    ('217', "🛸 Spin a hula hoop on your arm like Saturn's rings!"), 
+    ('218', "📝 Write a poem about the 'Man in the Moon'!"), 
+    ('219', "🧘 Do a 'supernova' stretch (start small, then jump wide)!"), 
+    ('220', "🔋 Sit in the 'recharging station' (your favorite chair)!"), 
+    ('221', "🥛 Drink a glass of 'supernova soda' (sparkling water)!"), 
+    ('222', "🚀 Do a 'lunar lap' around your house!"), 
+    ('223', "🛸 Wear your clothes backward for 'opposite-day on Venus'!"), 
+    ('224', "🌌 Create a 'galaxy jar' with water, glitter, and cotton balls!"), 
+    ('225', "🧼 Scrub the 'landing gear' (your feet) in the shower!"), 
+    ('226', "📦 Make a 'periscope' to look around corners!"), 
+    ('227', "🥨 Eat 'space sticks' (carrot sticks)!"), 
+    ('228', "🔭 Spot a 'satellite' (any moving light in the sky)!"), 
+    ('229', "🛸 Imagine you're floating and move your arms slowly!"), 
+    ('230', "📝 Write down one 'Mission Goal' for tomorrow!") 
+    """)
+def init_default_encouragments(cur):
+    """Create default encouragements"""
+    cur.execute("""
+    INSERT INTO encouragements (message)
+    VALUES 
+    ("is sending you rocket fuel! 🚀✨"),
+    ("is refueling your tank with cosmic energy! ⭐💫"),
+    ("thinks you're doing stellar! 🌟🌙"),
+    ("is beaming positive vibes your way! 🛸💖"),
+    ("says you're out of this world! 🌍🪐"),
+    ("is sending you galaxy-sized hugs! 🌌🤗"),
+    ("believes you can reach the stars! ✨🌠"),
+    ("is your co-pilot cheering you on! 🛰️💪"),
+    ("sent you a care package from Mission Control! 📦💝"),
+    ("thinks you shine brighter than a supernova! 💫⭐"),
+    ("is sending you a cosmic handshake! 🤝🪐"),
+    ("is calculating a perfect trajectory for you! 🛰️📈"),
+    ("thinks you’re the brightest star in the cluster! ✨💎"),
+    ("is fueling your boosters for a major breakthrough! 🚀🔥"),
+    ("says your potential is as infinite as the void! 🌌♾️"),
+    ("is sending a pulsar pulse of positivity! 💓📡"),
+    ("believes you’re ready for deep-space exploration! 🧑‍🚀🧭"),
+    ("is clearing a path through the asteroid belt for you! ☄️🛡️"),
+    ("thinks you have the focus of a laser beam! 🔦🎯"),
+    ("is cheering from the observation deck! 🏟️🔭"),
+    ("says you’ve reached escape velocity! 🚀💨"),
+    ("is tracking your glowing success from Earth! 🌍📡"),
+    ("thinks you’re a total supernova of talent! 💥🌟"),
+    ("is sending intergalactic high-fives! 🖐️👽"),
+    ("says your orbit is looking stable and strong! 🔄💪"),
+    ("is beaming up a supply drop of motivation! 📦⚡"),
+    ("thinks you’re the MVP of the Milky Way! 🏆🌌"),
+    ("is watching your star rise in the sky! 📈🌠"),
+    ("says you’re a pioneer of the final frontier! 🚩🌑"),
+    ("is refueling your spirit with liquid starlight! 🧪✨"),
+    ("thinks you’re a cosmic phenomenon! 🪐😲"),
+    ("is sending cosmic rays of confidence your way! ☀️⚡"),
+    ("says you’re the commander of your own destiny! 🧑‍✈️🛰️"),
+    ("is celebrating your successful docking maneuver! ⚓🚀"),
+    ("thinks your ideas are revolutionary like a planet! 🔄💡"),
+    ("is sending a meteor shower of luck! ☄️🍀"),
+    ("says you’re shining through the dark matter! 🖤✨"),
+    ("is calibrating your sensors for total success! ⚙️📡"),
+    ("thinks you’re an absolute legend of the cosmos! 📜🌌"),
+    ("is sending a gravity assist to speed you up! 🪐💨"),
+    ("says you’re outshining the midday sun! ☀️😎"),
+    ("is keeping your life-support systems at 100%! 🔋❤️"),
+    ("thinks you’re a master of the universe! 👑🌌"),
+    ("is sending a warp-speed wink your way! 😉🚀"),
+    ("says your progress is a giant leap for mankind! 👣🌑"),
+    ("is cheering for your mission’s success! 📣🚩"),
+    ("thinks you’re a brilliant spark in the dark! ⚡🌑"),
+    ("is sending a signal through the space-time continuum! ⏳🌀"),
+    ("says you’re a force of nature—and space! 🌪️🪐"),
+    ("is making sure your heat shield is holding strong! 🛡️🔥"),
+    ("thinks you’re the most curious explorer in the fleet! 🕵️‍♂️🛰️"),
+    ("is sending a galaxy-sized hug! 🌌🤗"),
+    ("says your light takes 0 seconds to reach our hearts! ❤️✨"),
+    ("is giving you a standing ovation from Mission Control! 👏🏛️"),
+    ("thinks you’re a diamond in the cosmic dust! 💎☁️"),
+    ("is sending a flare of encouragement! 🎇📢"),
+    ("says you’re navigating the nebula like a pro! ☁️🧭"),
+    ("is beaming over some extra rocket fuel! ⛽🚀"),
+    ("thinks you’re the North Star of the team! 🧭⭐"),
+    ("is shouting your name across the solar system! 🗣️☀️"),
+    ("says you’ve got the right stuff! ✔️🛰️"),
+    ("is sending a constellation of compliments! 🌌💬"),
+    ("thinks your energy is more powerful than a quasar! ⚡🌀"),
+    ("is tracking your trajectory to greatness! 📈🪐"),
+    ("says you’re the hero of this space odyssey! 🦸‍♂️🚀"),
+    ("is sending a gentle solar wind to push you forward! 🌬️☀️"),
+    ("thinks you’re a celestial masterpiece! 🎨✨"),
+    ("is making sure your comms are loud and clear! 🎙️📡"),
+    ("says you’re a shooting star that never fades! 🌠⏳"),
+    ("is sending a binary code for 'You Rock'! 01011 🤘"),
+    ("thinks you’re the most luminous object in the sky! 💡🌌"),
+    ("is preparing a hero’s welcome for your return! 🎊🛬"),
+    ("says your drive is stronger than a rocket engine! ⚙️💪"),
+    ("is sending a ripple of joy through the galaxy! 🌊💖"),
+    ("thinks you’re the captain of cool! 😎🧑‍✈️"),
+    ("is watching your mission with total awe! 🤩🛰️"),
+    ("says you’re a beacon of light in the deep void! 🚨🌑"),
+    ("is sending a cargo ship full of smiles! 🚢😊"),
+    ("thinks you’re a total trailblazer of the stars! 🚜✨"),
+    ("is transmitting 100% positive energy! 📶🔋"),
+    ("says you’re the key to our cosmic success! 🔑🪐"),
+    ("is giving you the green light for liftoff! 🟢🚀"),
+    ("thinks you’re a rare moon-gem! 💎🌙"),
+    ("is sending a magnetic pull toward your goals! 🧲🎯"),
+    ("says your future is brighter than a binary star! ☀️☀️"),
+    ("is keeping the stardust out of your eyes! 🧹✨"),
+    ("thinks you’re an unstoppable force of gravity! 🌍⬇️"),
+    ("is sending a secret message in the stars! 🤫🌌"),
+    ("says you’re the architect of the future! 🏗️🪐"),
+    ("is cheering as you break the sound barrier! 🔊💥"),
+    ("thinks you’re a stellar individual! 🌟👤"),
+    ("is sending a cloud of comfort from the nebula! ☁️🛋️"),
+    ("says you’re the sun in our solar system! ☀️🏠"),
+    ("is giving you a 10/10 on your landing! 🔟🛬"),
+    ("thinks you’re a pioneer of possibilities! 🚀🌌"),
+    ("is sending a warm glow from the corona! ☀️🔥"),
+    ("says your potential is light-years ahead! 🏃‍♂️💨"),
+    ("is keeping an eye on your cosmic compass! 🧭✨"),
+    ("thinks you’re a gravity-defying genius! 🧠🆙"),
+    ("is sending a meteor-sized dose of bravery! ☄️🛡️"),
+    ("says you’re the pulse of the space station! 💓🛰️"),
+    ("is beaming up some extra-strength coffee! ☕🚀"),
+    ("thinks you’re a cosmic treasure! 🏴‍☠️🌌"),
+    ("is sending a holographic high-five! 👤✋"),
+    ("says you’re the navigator of your own nebula! 🧭☁️"),
+    ("is keeping your oxygen levels high and steady! 🫁💨"),
+    ("thinks you’re a star-born success! 👶⭐"),
+    ("is sending a wave from the edge of the universe! 👋🌌"),
+    ("says you’re a cosmic rockstar! 🎸🪐"),
+    ("is clearing your landing pad of all worries! 🧹🚩"),
+    ("thinks you’re the most brilliant spark in the dark! ⚡🌚"),
+    ("is sending a satellite signal of support! 📡💖"),
+    ("says you’re a marvel of the modern age! 🤖🌌"),
+    ("is celebrating your interstellar achievements! 🎊🎖️"),
+    ("thinks your spirit is as vast as the cosmos! 🌌🕊️"),
+    ("is sending a moon-bounce of happiness! 🌕🆙"),
+    ("says you’re the brightest object in our orbit! ☀️🛰️"),
+    ("is keeping the space-time continuum safe for you! ⏳🪐"),
+    ("thinks you’re an absolute sun-beam! ☀️😊"),
+    ("is sending a solar flare of friendship! 🔥🤝"),
+    ("says you’re the discovery of the century! 🔎🌟"),
+    ("is keeping your thrusters in tip-top shape! 🔧🚀"),
+    ("thinks you’re a giant among planets! 🪐🔝"),
+    ("is sending a galaxy-sized thank you! 🌌🙏"),
+    ("says you’re the light at the end of the wormhole! 🌀💡"),
+    ("is cheering for your lunar achievements! 🌕🏆"),
+    ("thinks you’re a visionary of the void! 👁️🌌"),
+    ("is sending a rocket-powered hug! 🚀🤗"),
+    ("says you’re a master of planetary motion! 🔄🪐"),
+    ("is keeping your mission log full of wins! 📝✅"),
+    ("thinks you’re a celestial superstar! 🌟🎭"),
+    ("is sending a ray of hope from the sun! ☀️🌈"),
+    ("says you’re the heartbeat of our crew! 💓🧑‍🚀"),
+    ("is watching your star shine from afar! 🔭⭐"),
+    ("thinks you’re a comet of creativity! ☄️🎨"),
+    ("is sending a signal of pure pride! 📡😌"),
+    ("says you’re a universe of talent yourself! 🌌🧠"),
+    ("is keeping the solar flares away from you! 🛡️🔥"),
+    ("thinks you’re a masterpiece of the Milky Way! 🌌🖼️"),
+    ("is sending a cosmic cheer! 📣✨"),
+    ("says you’re the pilot of your own dreams! 🧑‍✈️💭"),
+    ("is making sure your stardust stays sparkly! 🧹✨"),
+    ("thinks you’re an astronomical success! 📈🌌"),
+    ("is sending a moon-pie of motivation! 🥧🌙"),
+    ("says you’re the glue holding the galaxy together! 🧪🌌"),
+    ("is watching your progress with a telescope! 🔭👀"),
+    ("thinks you’re a wonder of the world—and space! 🌍🛸"),
+    ("is sending a deep-space transmission of love! 📡❤️"),
+    ("says you’re the captain of this mission! 🧑‍✈️🚩"),
+    ("is keeping the aliens away so you can focus! 👽🚫"),
+    ("thinks you’re a celestial treasure! 💎🪐"),
+    ("is sending a burst of gamma-ray goodness! 💥🌈"),
+    ("says you’re the brightest star in the night! 🌟🌃"),
+    ("is keeping your internal clock on stardate! 🕰️🌌"),
+    ("thinks you’re a pioneer of the future! 🚀📅"),
+    ("is sending a cosmic wink! 😉✨"),
+    ("says you’re the king/queen of the cosmos! 👑🌌"),
+    ("is keeping the void filled with your laughter! 😂🌌"),
+    ("thinks you’re a supernova of kindness! 💥❤️"),
+    ("is sending a warp-drive boost! 🚀⚡"),
+    ("says you’re the star-chart of our lives! 🗺️⭐"),
+    ("is keeping your space-suit shiny and clean! 🧼🧑‍🚀"),
+    ("thinks you’re a marvel of the multiverse! 🌀😲"),
+    ("is sending a pulse of pure potential! 💓📈"),
+    ("says you’re the explorer we’ve been waiting for! 🧑‍🚀🔭"),
+    ("is keeping your orbit perfectly circular! 🔄⭕"),
+    ("thinks you’re a legend in the making! 📜✨"),
+    ("is sending a galaxy of good vibes! 🌌✨"),
+    ("says you’re the sun-spot on our day! ☀️😊"),
+    ("is keeping the dark matter at bay! 🛡️🖤"),
+    ("thinks you’re a celestial high-achiever! 🥇🪐"),
+    ("is sending a meteor shower of magic! ☄️✨"),
+    ("says you’re the star of the show! 🌟🎭"),
+    ("is keeping your mission on the right track! 🗺️🚀"),
+    ("thinks you’re a giant leap ahead! 👣🆙"),
+    ("is sending a supernova-sized salute! 🫡💥"),
+    ("says you’re the commander of the clouds! ☁️🧑‍✈️"),
+    ("is keeping your solar panels pointed at the light! ☀️🔋"),
+    ("thinks you’re an intergalactic inspiration! 🌌💡"),
+    ("is sending a shuttle-load of support! 🚀🤝"),
+    ("says you’re the guardian of the galaxy! 🛡️🌌"),
+    ("is keeping your starlight burning bright! 🔥⭐"),
+    ("thinks you’re a cosmic creator! 🎨🪐"),
+    ("is sending a radio wave of relief! 📡😌"),
+    ("says you’re the explorer of the unknown! 🗺️❓"),
+    ("is keeping your mission clock ticking! ⏱️🚀"),
+    ("thinks you’re a star-dusted darling! ✨💖"),
+    ("is sending a gravity-defying grin! 😁🌍"),
+    ("says you’re the anchor in our asteroid belt! ⚓☄️"),
+    ("is keeping your trajectory toward the top! 📈🔝"),
+    ("thinks you’re a celestial celebratee! 🎊🌟"),
+    ("is sending a wormhole to your happy place! 🌀🏠"),
+    ("says you’re the pilot of our hearts! 🧑‍✈️❤️"),
+    ("is keeping your energy levels at maximum! 🔋⚡"),
+    ("thinks you’re a shooting star of success! 🌠🏆"),
+    ("is sending a moon-lit message of peace! 🌙🕊️"),
+    ("says you’re the star-lord of the crew! 👑⭐"),
+    ("is keeping your flight path clear and bright! 🛣️✨"),
+    ("thinks you’re an astronomical amazing person! 😲🌌"),
+    ("is sending a solar flare of fun! 🔥🥳"),
+    ("says you’re the center of our universe! ☀️🌀"),
+    ("is keeping your cosmic spirits high! 🌌🆙"),
+    ("thinks you’re the best thing since the Big Bang! 💥📈"),
+    ("is sending a final transmission: YOU ARE AWESOME! 📡🙌")
+    """)
+def init_default_space_facts(cur):
+    """Create default space facts"""
+    cur.execute("""
+    INSERT INTO space_facts (fact)
+    VALUES 
+    ('A day on Venus is longer than a year on Venus.'),
+    ('There are more trees on Earth than stars in the Milky Way.'),
+    ('Neutron stars can spin at a rate of 600 rotations per second.'),
+    ('The largest volcano in the solar system is on Mars.'),
+    ('Space is completely silent; there is no atmosphere to carry sound.'),
+    ('A teaspoon of neutron star would weigh about 6 billion tons on Earth.'),
+    ('The footprints left by astronauts on the Moon will remain for millions of years.'),
+    ('Saturn is the least dense planet in our solar system; it could float in water.'),
+    ('One million Earths could fit inside the Sun.'),
+    ('The Hubble Space Telescope has helped discover that the universe is expanding.')
+    ("A day on Venus is longer than its year! It takes 243 Earth days to rotate once."),
+    ("Neutron stars can spin at 600 rotations per second!"),
+    ("One teaspoon of a neutron star would weigh 6 billion tons!"),
+    ("The Sun accounts for 99.86% of the mass in our solar system."),
+    ("There are more stars in the universe than grains of sand on Earth!"),
+    ("Saturn's rings are only about 30 feet thick!"),
+    ("A year on Mercury is just 88 Earth days long."),
+    ("The footprints on the Moon will be there for 100 million years."),
+    ("The International Space Station orbits Earth every 90 minutes!"),
+    ("Jupiter's Great Red Spot is a storm that's been raging for over 300 years!"),
+    ("The coldest place in the universe is the Boomerang Nebula at -272°C!"),
+    ("There's a planet made entirely of diamonds called 55 Cancri e."),
+    ("The Milky Way galaxy is on a collision course with Andromeda in 4 billion years."),
+    ("You can fit all the planets in our solar system between Earth and the Moon!"),
+    ("The Sun loses 4 million tons of mass every second due to nuclear fusion."),
+    ("Space is completely silent because there's no atmosphere to carry sound."),
+    ("A full NASA spacesuit costs about $12 million dollars!"),
+    ("The largest known star, UY Scuti, could fit 5 billion Suns inside it!"),
+    ("On Mars, the sunset appears blue instead of red/orange."),
+    ("There are more than 100 billion galaxies in the observable universe."),
+    ("The hottest planet in our solar system is Venus, not Mercury!"),
+    ("Astronauts grow about 2 inches taller in space due to lack of gravity."),
+    ("One million Earths could fit inside the Sun!"),
+    ("The Moon is moving away from Earth at about 3.8 cm per year."),
+    ("A year on Pluto is 248 Earth years long!"),
+    ("The Great Wall of China is NOT visible from space with the naked eye."),
+    ("There's a water reservoir in space that holds 140 trillion times the water in Earth's oceans!"),
+    ("Venus rotates backwards compared to most planets in our solar system."),
+    ("The temperature in space can range from -270°C to millions of degrees!"),
+    ("Halley's Comet won't be visible from Earth again until 2061."),
+    ("There are volcanoes on Mars that are larger than Mount Everest!"),
+    ("The center of the Milky Way smells like rum and tastes like raspberries!"),
+    ("It takes light from the Sun 8 minutes and 20 seconds to reach Earth."),
+    ("There's a planet where it rains glass sideways - HD 189733b!"),
+    ("Black holes aren't actually holes - they're incredibly dense objects!"),
+    ("Saturn could float in water because it's less dense!"),
+    ("The largest volcano in our solar system is on Mars - Olympus Mons!"),
+    ("Uranus rotates on its side, likely from a massive ancient collision."),
+    ("There are more trees on Earth than stars in the Milky Way!"),
+    ("The Parker Solar Probe is the fastest human-made object at 430,000 mph!"),
+    ("Europa, Jupiter's moon, may have twice as much water as Earth!"),
+    ("A spacesuit takes 45 minutes to put on properly."),
+    ("The longest a person has lived in space continuously is 437 days!"),
+    ("There's a massive canyon on Mars that's 10 times longer than the Grand Canyon."),
+    ("The atmosphere on Venus is so thick it would crush you instantly!"),
+    ("Astronauts can't burp in space - there's no gravity to separate gas from liquid!"),
+    ("The International Space Station travels at 17,500 mph!"),
+    ("Mars has the largest dust storms in the solar system - lasting for months!"),
+    ("The universe is expanding faster than the speed of light!"),
+    ("There's enough gold in Earth's core to coat the entire surface 1.5 feet deep!"),
+    ("Io, a moon of Jupiter, is the most volcanically active body in the solar system."),
+    ("A year on Neptune is 165 Earth years!"),
+    ("The Andromeda Galaxy is heading towards us at 250,000 mph!"),
+    ("Space smells like burnt steak and hot metal according to astronauts!"),
+    ("Titan, Saturn's moon, has liquid methane lakes and rivers!"),
+    ("The coldest temperature ever recorded in space was in the Boomerang Nebula."),
+    ("Galaxies can collide and merge over millions of years."),
+    ("The first meal eaten in space was applesauce!"),
+    ("There are rogue planets floating in space not orbiting any star."),
+    ("The asteroid belt between Mars and Jupiter contains millions of asteroids!"),
+    ("Ganymede, Jupiter's largest moon, is bigger than Mercury!"),
+    ("White dwarfs are so dense that a teaspoon would weigh as much as an elephant!"),
+    ("The farthest human-made object is Voyager 1, over 14 billion miles away!"),
+    ("Mars' Valles Marineris canyon is 4 times deeper than the Grand Canyon!"),
+    ("There are storms on Jupiter that are larger than Earth!"),
+    ("The Moon has moonquakes, just like Earth has earthquakes."),
+    ("Comets are often called 'dirty snowballs' because they're made of ice and dust."),
+    ("The Oort Cloud surrounds our solar system with trillions of icy objects!"),
+    ("Neptune's winds can reach speeds of 1,200 mph - the fastest in the solar system!"),
+    ("The Sun will eventually become a red giant and engulf Mercury, Venus, and possibly Earth."),
+    ("Pluto was discovered in 1930 and demoted from planet status in 2006."),
+    ("Saturn's moon Enceladus shoots geysers of water into space!"),
+    ("The Kuiper Belt is home to thousands of icy worlds beyond Neptune."),
+    ("Mars has a day length very similar to Earth - about 24 hours and 37 minutes!"),
+    ("The first animal in space was a dog named Laika in 1957."),
+    ("Jupiter protects Earth by deflecting many asteroids with its massive gravity!"),
+    ("The speed of light is 186,282 miles per second!"),
+    ("Astronauts lose bone density in space at a rate of 1% per month."),
+    ("The Hubble Space Telescope has taken over 1.5 million observations!"),
+    ("Betelgeuse could explode into a supernova at any time - and it might already have!"),
+    ("The North Star (Polaris) won't always be the North Star due to Earth's wobble."),
+    ("Mars appears red because its surface is covered in iron oxide (rust)!"),
+    ("The largest known structure in the universe is the Hercules-Corona Borealis Great Wall."),
+    ("Space radiation would give you a lethal dose without a spacesuit in minutes!"),
+    ("The Sun is 4.6 billion years old and halfway through its life!"),
+    ("There are brown dwarfs - objects too big to be planets but too small to be stars."),
+    ("Olympus Mons on Mars is 16 miles high - 3 times taller than Mount Everest!"),
+    ("The universe is estimated to be 13.8 billion years old."),
+    ("Pulsars are rapidly spinning neutron stars that emit beams of radiation."),
+    ("The first spacewalk was performed by Soviet cosmonaut Alexei Leonov in 1965."),
+    ("Jupiter's moon Callisto is one of the most heavily cratered objects in the solar system!"),
+    ("Some exoplanets orbit their stars in just a few hours!"),
+    ("The Drake Equation estimates how many alien civilizations might exist."),
+    ("Red giants can be 100 times larger than the Sun!"),
+    ("The Wow! Signal from 1977 remains one of the strongest candidate signals for alien life."),
+    ("Astronauts see 16 sunrises and sunsets every day on the ISS!"),
+    ("The planet HD 189733b has winds of 5,400 mph and rains molten glass!"),
+    ("Meteor showers happen when Earth passes through debris left by comets."),
+    ("The Voyager Golden Records contain sounds and images representing Earth.")
+    """)
+def init_shop_items(cur):
+    """Populate shop items table using global SHOP_ITEMS"""
+    for item_id, item in SHOP_ITEMS.items():
+        cur.execute("""
+        INSERT INTO shop_items (item_id, name, description, price, emoji)
+        VALUES (%s, %s, %s, %s, %s) ON CONFLICT (item_id) DO NOTHING
+        """, (item['id'], item['name'], item['description'], item['price'], item['emoji']))
+
+def init_ship_upgrades(cur):
+    """Populate ship upgrades table using global SHIP_UPGRADES"""
+    for upgrade_type, upgrade in SHIP_UPGRADES.items():
+        cur.execute("""
+        INSERT INTO ship_upgrades (upgrade_id, name, emoji, base_cost)
+        VALUES (%s, %s, %s, %s) ON CONFLICT (upgrade_id) DO NOTHING
+        """, (upgrade['upgrade_id'], upgrade['name'], upgrade['emoji'], upgrade['base_cost']))
+def init_default_achievements(cur):
+    """Create default space-themed achievements"""
+    achievements = [
+        # Mission achievements
+        ("first_mission", "First Mission", "Complete your first space mission", "🎯", "explorer", "missions_completed", 1, 5, False, get_image_path(35,"Astronaut")),
+        ("mission_specialist", "Mission Specialist", "Complete 25 missions", "🛸", "explorer", "missions_completed", 25, 50, False, get_image_path(36,"Astronaut")),
+        ("veteran_pilot", "Veteran Pilot", "Complete 100 missions", "👨‍🚀", "explorer", "missions_completed", 100, 200, False, get_image_path(37,"Astronaut")),
+        ("mission_master", "Mission Master", "Complete 250 missions", "🏅", "explorer", "missions_completed", 250, 500, False, get_image_path(41,"Astronaut")),
+
+        # Encouragement achievements
+        ("first_contact", "First Contact", "Send your first encouragement", "📡", "social", "encouragements_given", 1, 5, False, get_image_path(1, "Alien")),
+        ("ambassador", "Ambassador", "Encourage 20 crew members", "🤝", "social", "encouragements_given", 20, 40, False, get_image_path(2, "Alien")),
+        ("galactic_friend", "Galactic Friend", "Encourage 50 crew members", "💫", "social", "encouragements_given", 50, 100, False, get_image_path(3, "Alien")),
+        ("beloved_crew", "Beloved Crew", "Receive 15 encouragements", "⭐", "social", "encouragements_received", 15, 30, False, get_image_path(4, "Alien")),
+
+        # Plushie achievements
+        ("first_companion", "First Companion", "Register your first plushie", "🧸", "collector", "plushies_registered", 1, 5, False, get_image_path(2,"Astronaut")),
+        ("plushie_fleet", "Plushie Fleet", "Register 10 plushies", "🎪", "collector", "plushies_registered", 10, 50, False, get_image_path(8, "Astronaut")),
+        ("curator", "Curator", "Register 25 plushies", "🛍️", "collector", "plushies_registered", 25, 100, False, get_image_path(10, "Astronaut")),
+        
+        # Knowledge achievements
+        ("space_cadet", "Space Cadet", "Learn 10 space facts", "📚", "scholar", "facts_learned", 10, 20, False, get_image_path(12,"Astronaut")),
+        ("astronomer", "Astronomer", "Learn 50 space facts", "🔭", "scholar", "facts_learned", 50, 100, False, get_image_path(19,"Astronaut")),
+        ("astrophysicist", "Astrophysicist", "Learn 100 space facts", "👩‍🔬", "scholar", "facts_learned", 100, 200, False, get_image_path(60, "Astronaut")),
+        
+        # Exploration achievements
+        ("planet_hunter", "Planet Hunter", "Discover 10 planets", "🪐", "explorer", "planets_discovered", 10, 20, False, get_image_path(63,"Astronaut")),
+        ("spacewalker", "Spacewalker", "Take 15 spacewalks", "🧑‍🚀", "explorer", "spacewalks_taken", 15, 30, False, get_image_path(66,"Astronaut")),
+        
+        # Economy achievements
+        ("first_purchase", "First Purchase", "Buy your first item", "💰", "merchant", "items_purchased", 1, 5, False, get_image_path(80,"Astronaut")),
+        ("savvy_shopper", "Savvy Shopper", "Purchase 25 items", "🛍️", "merchant", "items_purchased", 25, 50, False, get_image_path(82, "Astronaut")),
+        ("collector_supreme", "Collector Supreme", "Own 50+ items in inventory", "📦", "merchant", "total_items_owned", 50, 100, False, get_image_path(83, "Astronaut")),
+        ("ship_engineer", "Ship Engineer", "Upgrade your ship 10 times", "🔧", "engineer", "ship_upgrades", 10, 75, False, get_image_path(85, "Astronaut")),
+        ("master_engineer", "Master Engineer", "Upgrade your ship 25 times", "⚙️", "engineer", "ship_upgrades", 25, 150, False, get_image_path(87, "Astronaut")),
+        
+        # Hidden achievements
+        ("secret_astronaut", "Secret Astronaut", "Mission Control knows your call sign", "🎖️", "hidden", "missions_completed", 500, 1000, True, get_image_path(39,"Astronaut")),
+        ("cosmic_legend", "Cosmic Legend", "A true space pioneer", "🌌", "hidden", "encouragements_given", 100, 500, True, get_image_path(42,"Astronaut")),
+        ("millionaire", "Space Millionaire", "Accumulate 10,000 credits", "💎", "hidden", "total_credits_earned", 10000, 2000, True, get_image_path(46, "Astronaut")),
+    ]
+    
+    for ach in achievements:
+        cur.execute("""INSERT INTO achievements (id, name, description, icon, category, requirement_type, requirement_count, credits, hidden, image_id)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING""", ach)
 def init_db():
     """Initialize all database tables (idempotent & safe)"""
     global _db_initialized
@@ -241,7 +863,7 @@ def init_db():
                     ship_upgrades INTEGER DEFAULT 0,
                     total_items_owned INTEGER DEFAULT 0,
                     total_credits_earned INTEGER DEFAULT 0,
-                    total_points INTEGER DEFAULT 0,
+                    total_credits INTEGER DEFAULT 0,
                     salvages_completed INTEGER DEFAULT 0
                 )
             """)
@@ -269,88 +891,74 @@ def init_db():
     _db_initialized = True
     logger.info("Database initialized")
 
-# =========================
-# ACHIEVEMENT SYSTEM
-# =========================
-
-class AchievementManager:
+#Achievement System
+class Achievement:
     @staticmethod
-    async def check_and_award(user_id: int, stat_type: str, new_value: int, channel: Optional[discord.TextChannel] = None):
-        """Check if user unlocked any achievements and award them"""
+    async def check_and_award(user_id:int, stat_type:str, new_value:int, channel:Optional[Any]=None):
+        """Check if the user's achievement should be awarded based on their progress."""
         unlocked = []
-        
         with DatabasePool.get_conn() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                # Get relevant achievements for this stat type
-                cur.execute("""SELECT a.* FROM achievements a
-                              LEFT JOIN user_achievements ua ON a.id = ua.achievement_id AND ua.user_id = %s
-                              WHERE a.requirement_type = %s AND (ua.unlocked IS NULL OR ua.unlocked = FALSE)""",
-                           (user_id, stat_type))
+            with conn.cursor() as cur:
+                cur.execute("Select a.* From achievements a LEFT JOIN user_achievements ua ON a.id = ua.achievement_id AND ua.user_id = %s WHERE a.requirement_type = %s AND (ua.achievement_id IS NULL OR ua.awarded_at IS NULL)", (user_id, stat_type))
                 achievements = cur.fetchall()
-                
                 for ach in achievements:
-                    if new_value >= ach['requirement_count']:
-                        # Unlock achievement
+                    if new_value >= ach["requirement_count"]:
                         cur.execute("""INSERT INTO user_achievements (user_id, achievement_id, progress, unlocked, unlocked_at)
                                       VALUES (%s, %s, %s, TRUE, NOW())
-                                      ON CONFLICT (user_id, achievement_id) 
-                                      DO UPDATE SET unlocked = TRUE, unlocked_at = NOW(), progress = EXCLUDED.progress""",
+                                      ON CONFLICT (user_id) DO UPDATE SET unlocked = TRUE, unlocked_at = NOW(), progress = EXCLUDED.progress""",
                                    (user_id, ach['id'], new_value))
                         
-                        # Add points
-                        cur.execute("""INSERT INTO user_stats (user_id, total_points) VALUES (%s, %s)
-                                      ON CONFLICT (user_id) DO UPDATE SET total_points = user_stats.total_points + EXCLUDED.total_points""",
-                                   (user_id, ach['points']))
-                        
-                        # Track total credits earned
+                        cur.execute("""INSERT INTO user_stats (user_id, total_credits) VALUES (%s, %s)
+                                      ON CONFLICT (user_id) DO UPDATE SET total_credits = user_stats.total_credits + EXCLUDED.total_credits""",
+                                   (user_id, ach['credits']))
+                        cur.execute("""SELECT * FROM achievements WHERE id = %s""", (ach['id'],))
+                        unlocked_ach = cur.fetchone()
+                        if not unlocked_ach:
+                            continue
                         cur.execute("""INSERT INTO user_stats (user_id, total_credits_earned) VALUES (%s, %s)
                                       ON CONFLICT (user_id) DO UPDATE SET total_credits_earned = user_stats.total_credits_earned + EXCLUDED.total_credits_earned""",
-                                   (user_id, ach['points']))
-                        
+                                   (user_id, ach['credits']))
                         unlocked.append(ach)
                     else:
-                        # Update progress
-                        cur.execute("""INSERT INTO user_achievements (user_id, achievement_id, progress)
-                                      VALUES (%s, %s, %s)
-                                      ON CONFLICT (user_id, achievement_id) DO UPDATE SET progress = EXCLUDED.progress""",
-                                   (user_id, ach['id'], new_value))
-        
-        # Send notifications for unlocked achievements
-        if unlocked and channel:
+                        cur.execute("""INSERT INTO user_achievements (user_id, achievement_id) VALUES (%s, %s) ON CONFLICT (user_id, achievement_id) DO NOTHING""", (user_id, ach["id"]))
+        if unlocked and channel and isinstance(channel, (discord.TextChannel, discord.Thread)):
             for ach in unlocked:
-                await AchievementManager.send_unlock_notification(channel, user_id, ach)
-        
-        # Also check total_credits_earned achievements after awarding points (but avoid recursion)
+                await Achievement.send_unlock_notification(user_id, ach, channel)
         if unlocked and stat_type != "total_credits_earned":
             with DatabasePool.get_conn() as conn:
-                with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                    cur.execute("SELECT total_credits_earned FROM user_stats WHERE user_id = %s", (user_id,))
+                with conn.cursor() as cur:
+                    total_credits = sum(ach["credits"] for ach in unlocked)
+                    cur.execute("""INSERT INTO user_stats (user_id, total_credits_earned, total_credits) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET total_credits = user_stats.total_credits + %s""", (user_id, total_credits, total_credits))
                     stats = cur.fetchone()
                     if stats:
-                        await AchievementManager.check_and_award(user_id, "total_credits_earned", stats['total_credits_earned'], channel)
-        
+                        await Achievement.check_and_award(user_id, "total_credits_earned", stats["total_credits_earned"], channel)
         return unlocked
-    
+
     @staticmethod
-    async def send_unlock_notification(channel: discord.TextChannel, user_id: int, achievement: dict):
-        """Send a notification when achievement is unlocked"""
+    async def send_unlock_notification(user_id:int, ach:dict, channel:Union[discord.TextChannel, discord.Thread]):
+        """Send achievement unlocked notification"""
         user = await channel.guild.fetch_member(user_id)
         embed = discord.Embed(
-            title="🎊 Achievement Unlocked!",
-            description=f"{achievement['icon']} **{achievement['name']}**\n*{achievement['description']}*\n\n+{achievement['points']} points!",
-            color=discord.Color.gold()
+            title=f"Congratulations {user.display_name}!",
+            description=f"You've unlocked the **{ach['name']}** achievement!\n\n{ach['description']}\n\nEarned credits: {ach['credits']}",
+            color=discord.Colour.from_str(PALETTE['LB'])
         )
-        embed.set_thumbnail(url=user.display_avatar.url)
-        embed.set_footer(text=f"Congratulations, {user.display_name}!")
-        
-        # Try to attach a random astronaut image
-        astro_image = get_random_astronaut_image()
+        if user.avatar:
+            embed.set_thumbnail(url=user.avatar.url)
+        embed.add_field(name="Icon:", value=ach["icon"])
+        embed.add_field(name="Category:", value=ach["category"].capitalize())
+        embed.add_field(name="Requirement Type:", value=ach["requirement_type"])
+        embed.add_field(name="Requirement Count:", value=ach["requirement_count"])
+        embed.add_field(name="Credits:", value=ach["credits"])
+        await channel.send(embed=embed)
+        astro_image=get_image_path(ach.get("image_id", 1))
         if astro_image:
-            embed.set_image(url=f"attachment://{astro_image.filename}")
-            await channel.send(embed=embed, file=astro_image)
+            embed.set_image(url=f"attachment://{os.path.basename(astro_image)}")
+            with open(astro_image, 'rb') as img_file:
+                file = discord.File(img_file, filename=os.path.basename(astro_image))
+                await channel.send(file=file, embed=embed)
         else:
             await channel.send(embed=embed)
-    
     @staticmethod
     def increment_stat(user_id: int, stat_name: str, amount: int = 1):
         """Increment a user stat and return new value"""
@@ -362,134 +970,119 @@ class AchievementManager:
                            (user_id, amount))
                 new_value = cur.fetchone()[0]
                 
-                # Also track total credits earned when points are added
-                if stat_name == "total_points" and amount > 0:
+                # Also track total credits earned when credits are added
+                if stat_name == "total_credits" and amount > 0:
                     cur.execute("""INSERT INTO user_stats (user_id, total_credits_earned) VALUES (%s, %s)
                                    ON CONFLICT (user_id) DO UPDATE SET total_credits_earned = user_stats.total_credits_earned + EXCLUDED.total_credits_earned""",
                                (user_id, amount))
                 
                 return new_value
 
-# =========================
-# SPACE ECONOMY & SHIPS
-# =========================
+# Space Economy System
 
 def calculate_upgrade_cost(current_level: int, base_cost: int) -> int:
-    """Calculate cost for next upgrade level"""
+    """Calculate the cost of the next ship upgrade based on current level."""
     return base_cost * (current_level + 1)
-
 class ShipManager:
-    """Manages personal starship operations"""
-    
+    """Manages personal starship operations."""
     @staticmethod
     def create_ship(user_id: int, name: str) -> bool:
         try:
             with DatabasePool.get_conn() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("""
-                        INSERT INTO ships (user_id, name, ship_class, engine_level, weapon_level, shield_level, health, max_health)
-                        VALUES (%s, %s, 'Scout', 1, 1, 1, 100, 100)
-                    """, (user_id, name))
-            return True
+                    cur.execute("""INSERT INTO ships (user_id, name) VALUES (%s, %s)""", (user_id, name))
+                    return True
         except Exception as e:
-            logger.error(f"Failed to create ship: {e}")
+            logger.error(f"Error creating ship: {e}")
             return False
-    
     @staticmethod
     def get_ship(user_id: int) -> Optional[Dict]:
         with DatabasePool.get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("SELECT * FROM ships WHERE user_id = %s", (user_id,))
-                return cur.fetchone()
-
+                cur.execute("""SELECT * FROM ships WHERE user_id = %s""", (user_id,))
+                ship = cur.fetchone()
+                return ship if ship else None
     @staticmethod
-    def damage_ship(user_id: int, amount: int) -> int:
-        """Subtract health from ship and return new health"""
+    def damage_ship(user_id: int, damage: int) -> Optional[int]:
         with DatabasePool.get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("""
-                    UPDATE ships SET health = GREATEST(0, health - %s) 
-                    WHERE user_id = %s RETURNING health
-                """, (amount, user_id))
-                return cur.fetchone()[0]
-
+                cur.execute("""UPDATE ships SET health = GREATEST(health - %s, 0) WHERE user_id = %s RETURNING health""", (damage, user_id))
+                result = cur.fetchone()
+                return result[0] if result else None
     @staticmethod
-    def repair_ship(user_id: int, amount: int) -> int:
-        """Add health to ship and return new health"""
+    def repair_ship(user_id: int, repair_amount: int) -> Optional[int]:
         with DatabasePool.get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("""
-                    UPDATE ships SET health = LEAST(max_health, health + %s) 
-                    WHERE user_id = %s RETURNING health
-                """, (amount, user_id))
-                return cur.fetchone()[0]
-    
+                cur.execute("""UPDATE ships SET health = LEAST(health + %s, max_health) WHERE user_id = %s RETURNING health""", (repair_amount, user_id))
+                result = cur.fetchone()
+                return result[0] if result else None
     @staticmethod
-    def upgrade_ship(user_id: int, component: str) -> bool:
-        try:
-            with DatabasePool.get_conn() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(f"UPDATE ships SET {component}_level = {component}_level + 1 WHERE user_id = %s RETURNING {component}_level", (user_id,))
-                    result = cur.fetchone()
-                    return result is not None
-        except Exception as e:
-            logger.error(f"Failed to upgrade ship: {e}")
-            return False
+    def upgrade_ship(user_id: int, upgrade_type: str) -> Optional[tuple[str, int, int]]:
+        with DatabasePool.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""SELECT s.*, su.base_cost FROM ships s INNER JOIN ship_upgrades su ON s.ship_class = su.name WHERE s.user_id = %s""", (user_id,))
+                ship = cur.fetchone()
+                if not ship:
+                    return None
+                if upgrade_type == "engine":
+                    current_level = ship["engine_level"]
+                    base_cost = ship["engine_base_cost"]
+                elif upgrade_type == "weapon":
+                    current_level = ship["weapon_level"]
+                    base_cost = ship["weapon_base_cost"]
+                elif upgrade_type == "shield":
+                    current_level = ship["shield_level"]
+                    base_cost = ship["shield_base_cost"]
+                else:
+                    return None
+                new_cost = calculate_upgrade_cost(current_level, base_cost)
+                cur.execute("""UPDATE ships SET {}_level = {}_level + 1 WHERE user_id = %s RETURNING {}_level""".format(upgrade_type, upgrade_type, upgrade_type), (user_id,))
+                new_level = cur.fetchone()[0]
+                return upgrade_type.capitalize(), new_cost, new_level
+    @staticmethod
+    def get_all_ships() -> List[Dict]:
+        with DatabasePool.get_conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""SELECT * FROM ships ORDER BY created_at DESC LIMIT 10""")
+                return cur.fetchall()
 
 class InventoryManager:
-    """Manages user inventory and items"""
-    
+    """Manages user inventory operations."""
     @staticmethod
-    def add_item(user_id: int, item_id: str, quantity: int = 1) -> bool:
+    def add_item(user_id: int, item_id: int, quantity: int = 1) -> bool:
         try:
             with DatabasePool.get_conn() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("""
-                        INSERT INTO inventory (user_id, item_id, quantity)
-                        VALUES (%s, %s, %s)
-                        ON CONFLICT (user_id, item_id) 
-                        DO UPDATE SET quantity = inventory.quantity + EXCLUDED.quantity
-                    """, (user_id, item_id, quantity))
-            return True
+                    cur.execute("""INSERT INTO inventory (user_id, item_id, quantity) VALUES (%s, %s, %s)
+                                   ON CONFLICT (user_id, item_id) DO UPDATE SET quantity = inventory.quantity + EXCLUDED.quantity""",
+                               (user_id, item_id, quantity))
+                    return True
         except Exception as e:
-            logger.error(f"Failed to add item: {e}")
+            logger.error(f"Error adding item to inventory: {e}")
             return False
-    
-    @staticmethod
-    def remove_item(user_id: int, item_id: str, quantity: int = 1) -> bool:
-        try:
-            with DatabasePool.get_conn() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                        UPDATE inventory SET quantity = quantity - %s
-                        WHERE user_id = %s AND item_id = %s AND quantity >= %s
-                        RETURNING quantity
-                    """, (quantity, user_id, item_id, quantity))
-                    result = cur.fetchone()
-                    if result and result[0] == 0:
-                        cur.execute("DELETE FROM inventory WHERE user_id = %s AND item_id = %s", (user_id, item_id))
-                    return result is not None
-        except Exception as e:
-            logger.error(f"Failed to remove item: {e}")
-            return False
-    
     @staticmethod
     def get_inventory(user_id: int) -> List[Dict]:
         with DatabasePool.get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("""
-                    SELECT i.item_id, i.quantity, si.name, si.description, si.emoji, si.rarity
-                    FROM inventory i
-                    JOIN shop_items si ON i.item_id = si.id
-                    WHERE i.user_id = %s
-                    ORDER BY si.rarity DESC, si.name
-                """, (user_id,))
+                cur.execute("""SELECT i.item_id, si.name, si.description, si.emoji, i.quantity
+                               FROM inventory i
+                               JOIN shop_items si ON i.item_id = si.item_id
+                               WHERE i.user_id = %s""", (user_id,))
                 return cur.fetchall()
+    @staticmethod
+    def remove_item(user_id: int, item_id: int, quantity: int = 1) -> bool:
+        try:
+            with DatabasePool.get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""UPDATE inventory SET quantity = GREATEST(quantity - %s, 0) WHERE user_id = %s AND item_id = %s RETURNING quantity""",
+                               (quantity, user_id, item_id))
+                    result = cur.fetchone()
+                    return result[0] > 0 if result else False
+        except Exception as e:
+            logger.error(f"Error removing item from inventory: {e}")
+            return False
 
-# =========================
-# PLUSHIE MANAGER
-# =========================
-
+# Plushie Management System
 class PlushieManager:
     """Manages plushie collection operations"""
     
@@ -569,65 +1162,117 @@ class PlushieManager:
                 """, (user_id, name))
                 return cur.rowcount > 0
 
-# =========================
-# EMBED MANAGER
-# =========================
-
+# Embed Manager
 class EmbedManager:
-    """Manages saved embed templates"""
+    """Manages saved embed operations."""
     
     @staticmethod
-    def save(name: str, data: Dict) -> bool:
+    def save_embed(user_id: int, name: str, embed_data: Dict) -> bool:
         try:
             with DatabasePool.get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
-                        INSERT INTO saved_embeds (name, title, description, color, image_url, footer, fields)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (name) DO UPDATE SET 
-                            title = EXCLUDED.title, description = EXCLUDED.description,
-                            color = EXCLUDED.color, image_url = EXCLUDED.image_url,
-                            footer = EXCLUDED.footer, fields = EXCLUDED.fields,
-                            updated_at = CURRENT_TIMESTAMP
-                    """, (
-                        name, data.get("title"), data.get("description"), data.get("color"),
-                        data.get("image"), data.get("footer"), json.dumps(data.get("fields", []))
-                    ))
+                        INSERT INTO saved_embeds (user_id, name, embed_data)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (user_id, name) 
+                        DO UPDATE SET embed_data = EXCLUDED.embed_data
+                    """, (user_id, name, json.dumps(embed_data)))
             return True
         except Exception as e:
             logger.error(f"Failed to save embed: {e}")
             return False
 
     @staticmethod
-    def get(name: str) -> Optional[Dict]:
+    def get_all_embeds(user_id: int) -> List[Dict]:
         with DatabasePool.get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("SELECT * FROM saved_embeds WHERE name = %s", (name,))
+                cur.execute("""
+                    SELECT name, embed_data FROM saved_embeds 
+                    WHERE user_id = %s ORDER BY name
+                """, (user_id,))
+                return cur.fetchall()
+    
+    @staticmethod
+    def list_all(user_id: int) -> List[str]:
+        with DatabasePool.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT name FROM saved_embeds 
+                    WHERE user_id = %s ORDER BY name
+                """, (user_id,))
+                return [row[0] for row in cur.fetchall()]
+    
+    @staticmethod
+    def get_embed(user_id: int, name: str) -> Optional[Dict]:
+        with DatabasePool.get_conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT embed_data FROM saved_embeds 
+                    WHERE user_id = %s AND LOWER(name) = LOWER(%s)
+                """, (user_id, name))
                 result = cur.fetchone()
-                if result:
-                    result["image"] = result.pop("image_url")
-                return result
-
+                return json.loads(result["embed_data"]) if result else None
     @staticmethod
-    def list_all() -> List[str]:
-        with DatabasePool.get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT name FROM saved_embeds ORDER BY name")
-                return [r[0] for r in cur.fetchall()]
-
+    def delete_embed(user_id: int, name: str) -> bool:
+        try:
+            with DatabasePool.get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        DELETE FROM saved_embeds 
+                        WHERE user_id = %s AND LOWER(name) = LOWER(%s)
+                    """, (user_id, name))
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete embed: {e}")
+            return False
     @staticmethod
-    def delete(name: str) -> bool:
-        with DatabasePool.get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM saved_embeds WHERE name = %s", (name,))
-                return cur.rowcount > 0
+    def update_embed(user_id: int, name: str, embed_data: Dict) -> bool:
+        try:
+            with DatabasePool.get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        UPDATE saved_embeds SET embed_data = %s
+                        WHERE user_id = %s AND LOWER(name) = LOWER(%s)
+                    """, (json.dumps(embed_data), user_id, name))
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update embed: {e}")
+            return False
 
-# =========================
-# BACKUP MANAGER
-# =========================
-
+# Backup Manager
 class BackupManager:
-    """Manages server backup and restore operations"""
+    """Manages backup operations."""
+    @staticmethod
+    def _serialize_overwrites(overwrites):
+        return [{
+            "id": target.id,
+            "name": target.name,
+            "is_role": isinstance(target, discord.Role),
+            "allow": ovr.pair()[0].value,
+            "deny": ovr.pair()[1].value
+        } for target, ovr in overwrites.items()]
+
+    @staticmethod
+    def _deserialize_overwrites(guild, overwrites_data, role_map):
+        overwrites = {}
+        for ovr in overwrites_data:
+            target = None
+            
+            if ovr["is_role"]:
+                target = guild.get_role(ovr.get("id"))
+                if not target:
+                    target = role_map.get(ovr["name"])
+            else:
+                target = guild.get_member(ovr.get("id"))
+                if not target:
+                    target = discord.utils.get(guild.members, name=ovr["name"])
+            
+            if target:
+                overwrites[target] = discord.PermissionOverwrite.from_pair(
+                    discord.Permissions(ovr["allow"]),
+                    discord.Permissions(ovr["deny"])
+                )
+        return overwrites
     
     @staticmethod
     async def create_backup(guild: discord.Guild) -> Dict:
@@ -661,7 +1306,6 @@ class BackupManager:
             data["categories"].append(cat_data)
         
         return data
-
     @staticmethod
     def save_to_db(guild_id: int, data: Dict) -> bool:
         try:
@@ -675,7 +1319,6 @@ class BackupManager:
         except Exception as e:
             logger.error(f"Backup save failed: {e}")
             return False
-
     @staticmethod
     def load_from_db(guild_id: int) -> Optional[Dict]:
         with DatabasePool.get_conn() as conn:
@@ -686,7 +1329,6 @@ class BackupManager:
                 """, (guild_id,))
                 result = cur.fetchone()
                 return result["backup_data"] if result else None
-
     @staticmethod
     async def restore(guild: discord.Guild, data: Dict):
         role_map = {}
@@ -737,8 +1379,7 @@ class BackupManager:
 
         seen_cat_ids = set()
         seen_cat_names = set()
-        
-        # Restore categories with deduplication
+    # Restore categories with deduplication
         for cat_data in data.get("categories", []):
             try:
                 cat_id = cat_data.get("id")
@@ -811,41 +1452,7 @@ class BackupManager:
             except Exception as e:
                 logger.error(f"Failed to restore category {cat_data['name']}: {e}")
 
-    @staticmethod
-    def _serialize_overwrites(overwrites):
-        return [{
-            "id": target.id,
-            "name": target.name,
-            "is_role": isinstance(target, discord.Role),
-            "allow": ovr.pair()[0].value,
-            "deny": ovr.pair()[1].value
-        } for target, ovr in overwrites.items()]
-
-    @staticmethod
-    def _deserialize_overwrites(guild, overwrites_data, role_map):
-        overwrites = {}
-        for ovr in overwrites_data:
-            target = None
-            
-            if ovr["is_role"]:
-                target = guild.get_role(ovr.get("id"))
-                if not target:
-                    target = role_map.get(ovr["name"])
-            else:
-                target = guild.get_member(ovr.get("id"))
-                if not target:
-                    target = discord.utils.get(guild.members, name=ovr["name"])
-            
-            if target:
-                overwrites[target] = discord.PermissionOverwrite.from_pair(
-                    discord.Permissions(ovr["allow"]),
-                    discord.Permissions(ovr["deny"])
-                )
-        return overwrites
-
-# =========================
-# UTILITY FUNCTIONS
-# =========================
+# Utilities
 
 class ImageUtil:
     """Image processing utilities"""
@@ -872,9 +1479,10 @@ def load_json_file(filename: str, default: List) -> List:
 def build_announcement_embed(position: str) -> discord.Embed:
     """Build header or footer announcement embed"""
     config = ANNOUNCEMENT_CONFIG.get(position, {})
+    color_hex = config.get("color", PALETTE.get("SB", "#7395cc"))
     embed = discord.Embed(
         description=config.get("description", ""),
-        color=discord.Color(config.get("color", 0xb1c3f9))
+        color=discord.Color(int(color_hex.replace("#", ""), 16))
     )
     if config.get("image_url"):
         embed.set_image(url=config["image_url"])
@@ -925,10 +1533,8 @@ def is_staff():
         await interaction.response.send_message("⛔ Staff only.", ephemeral=True)
         return False
     return app_commands.check(predicate)
-# =========================
-# BOT SETUP
-# =========================
 
+# bot setup
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -956,7 +1562,7 @@ async def on_ready():
 @bot.event
 async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
     """Auto-disconnect if bot is alone in voice channel"""
-    if member.id != bot.user.id:
+    if bot.user and member.id != bot.user.id:
         return
     
     # If bot left a channel
@@ -982,6 +1588,7 @@ def get_astronaut_image(filename: str):
         return None
     return discord.File(path, filename=filename)
 
+# Music Player Management
 # =========================
 # MUSIC PLAYER SYSTEM
 # =========================
@@ -1004,7 +1611,7 @@ class MusicPlayer:
         self.volume = 0.5
         self.loop = False
         
-    async def join(self, channel: discord.VoiceChannel):
+    async def join(self, channel: discord.VoiceChannel | discord.StageChannel):
         """Join a voice channel"""
         if self.voice_client and self.voice_client.is_connected():
             await self.voice_client.move_to(channel)
@@ -1107,96 +1714,83 @@ class MusicPlayer:
     def set_volume(self, volume: float):
         """Set playback volume (0.0 to 1.0)"""
         self.volume = max(0.0, min(1.0, volume))
-        if self.voice_client and self.voice_client.source:
-            self.voice_client.source.volume = self.volume
+        if self.voice_client and self.voice_client.is_playing():
+            self.voice_client.source.volume = self.volume # type: ignore
 
-# Global music players dictionary
+# Global Music Players Dictionary
 music_players: Dict[int, MusicPlayer] = {}
 
 def get_music_player(guild: discord.Guild) -> MusicPlayer:
-    """Get or create a music player for a guild"""
+    """Get or create a music player for the guild"""
     if guild.id not in music_players:
         music_players[guild.id] = MusicPlayer(guild)
     return music_players[guild.id]
 
-# =========================
-# MODAL CLASSES
-# =========================
-
+#Modal Classes
 class EmbedBuilderModal(discord.ui.Modal, title="Create Embed"):
     embed_title = discord.ui.TextInput(label="Title", required=False)
     description = discord.ui.TextInput(label="Description", style=discord.TextStyle.paragraph)
-    color = discord.ui.TextInput(label="Color (hex)", required=False)
     image_url = discord.ui.TextInput(label="Image URL", required=False)
-    footer = discord.ui.TextInput(label="Footer", required=False)
-
+    footer = discord.ui.TextInput(label="Subtext", required=False)
     def __init__(self, name: str):
         super().__init__()
         self.name = name
-
     async def on_submit(self, interaction: discord.Interaction):
-        data = {
+        embed_data = {
             "title": self.embed_title.value,
             "description": self.description.value,
-            "color": self.color.value,
-            "image": self.image_url.value,
-            "footer": self.footer.value,
+            "image": self.image_url.value if self.image_url.value else None,
+            "footer": self.footer.value if self.footer.value else None,
+            "color": PALETTE["SB"],
             "fields": []
         }
-        if EmbedManager.save(self.name, data):
-            await interaction.response.send_message(f"✅ Embed **{self.name}** saved.", ephemeral=True)
+        success = EmbedManager.save_embed(interaction.user.id, self.name, embed_data)
+        if success:
+            await interaction.response.send_message(f"✅ Embed '{self.name}' saved successfully.", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Failed to save embed.", ephemeral=True)
 
-class PlushieModal(discord.ui.Modal, title="Register Plushie"):
-    name = discord.ui.TextInput(label="Name")
-    species = discord.ui.TextInput(label="Species")
-    color = discord.ui.TextInput(label="Color", required=False)
-    personality = discord.ui.TextInput(label="Personality", style=discord.TextStyle.paragraph)
-    description = discord.ui.TextInput(label="Description", style=discord.TextStyle.paragraph)
-
-    def __init__(self, image_url: Optional[str], user_id: int, channel):
+class PlushieModal(discord.ui.Modal, title="Create Plushie"):
+    name = discord.ui.TextInput(label="Name", max_length=50)
+    species = discord.ui.TextInput(label="Species", max_length=50)
+    color = discord.ui.TextInput(label="Color", max_length=30)
+    personality = discord.ui.TextInput(label="Personality", style=discord.TextStyle.paragraph, max_length=200)
+    description = discord.ui.TextInput(label="Description", style=discord.TextStyle.paragraph, max_length=300)
+    def __init__(self, image: Optional[bytes] = None):
         super().__init__()
-        self.image_url = image_url
-        self.user_id = user_id
-        self.channel = channel
-
+        self.image = image
     async def on_submit(self, interaction: discord.Interaction):
-        image = None
-        if self.image_url:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(self.image_url) as resp:
-                    image = ImageUtil.compress(await resp.read())
-        
         data = {
             "name": self.name.value,
             "species": self.species.value,
-            "color": self.color.value or "N/A",
+            "color": self.color.value,
             "personality": self.personality.value,
             "description": self.description.value
         }
-        
-        if PlushieManager.create(interaction.user.id, data, image):
+        if PlushieManager.create(interaction.user.id, data, self.image):
             await interaction.response.send_message("🧸 Plushie registered!", ephemeral=True)
             
             # Track stats and check achievements
-            plushie_count = AchievementManager.increment_stat(self.user_id, "plushies_registered")
-            await AchievementManager.check_and_award(self.user_id, "plushies_registered", plushie_count, self.channel)
+            plushie_count = Achievement.increment_stat(interaction.user.id, "plushies_registered")
+            channel = interaction.channel if isinstance(interaction.channel, discord.TextChannel) else None
+            await Achievement.check_and_award(interaction.user.id, "plushies_registered", plushie_count, channel)
         else:
             await interaction.response.send_message("❌ Failed to register plushie.", ephemeral=True)
-
 class PlushieEditModal(discord.ui.Modal, title="Edit Plushie"):
     species = discord.ui.TextInput(label="Species", required=False)
     color = discord.ui.TextInput(label="Color", required=False)
     personality = discord.ui.TextInput(label="Personality", style=discord.TextStyle.paragraph, required=False)
     description = discord.ui.TextInput(label="Description", style=discord.TextStyle.paragraph, required=False)
-
-    def __init__(self, user_id: int, name: str, image_url: Optional[str], current: Dict):
+    def __init__(self, name: str, user_id: int, image: Optional[bytes] = None):
         super().__init__()
-        self.user_id = user_id
         self.name = name
-        self.image_url = image_url
-        
+        self.image = image
+        self.user_id = user_id
+
+        current = PlushieManager.get_one(user_id, name)
+        if not current:
+            return
+
         if current.get("species"):
             self.species.default = current["species"]
         if current.get("color"):
@@ -1205,7 +1799,6 @@ class PlushieEditModal(discord.ui.Modal, title="Edit Plushie"):
             self.personality.default = current["personality"]
         if current.get("description"):
             self.description.default = current["description"]
-
     async def on_submit(self, interaction: discord.Interaction):
         updates = {}
         if self.species.value:
@@ -1218,15 +1811,13 @@ class PlushieEditModal(discord.ui.Modal, title="Edit Plushie"):
             updates["description"] = self.description.value
         
         image = None
-        if self.image_url:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(self.image_url) as resp:
-                    image = ImageUtil.compress(await resp.read())
-        
+        if self.image:
+            image = ImageUtil.compress(self.image)        
         if PlushieManager.update(self.user_id, self.name, updates, image):
             await interaction.response.send_message("✅ Plushie updated!", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Update failed.", ephemeral=True)
+
 class ModApplicationModal(discord.ui.Modal, title="Moderator Application"):
     age = discord.ui.TextInput(
         label="Age",
@@ -1309,8 +1900,11 @@ class ModApplicationModal(discord.ui.Modal, title="Moderator Application"):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         
         # Notify staff in a staff channel
-        staff_channel = discord.utils.get(interaction.guild.channels, name="staff-notifications")
-        if staff_channel:
+        if interaction.guild:
+            staff_channel = discord.utils.get(interaction.guild.channels, name="staff-notifications")
+        else:
+            staff_channel = None
+        if staff_channel and isinstance(staff_channel, discord.TextChannel):
             staff_embed = discord.Embed(
                 title="📋 New Moderator Application",
                 description=f"**{interaction.user.mention}** has submitted a moderator application!",
@@ -1322,10 +1916,8 @@ class ModApplicationModal(discord.ui.Modal, title="Moderator Application"):
             staff_embed.set_footer(text="Use /mod_applications to review")
             await staff_channel.send(embed=staff_embed)
 
-# =========================
-# ACHIEVEMENT COMMANDS
-# =========================
-
+# Commands
+# Achievement Commands
 @bot.tree.command(name="achievements")
 async def achievements(interaction: discord.Interaction, member: Optional[discord.Member] = None):
     """View your achievements"""
@@ -1395,6 +1987,9 @@ async def leaderboard(interaction: discord.Interaction):
     medals = ["🥇", "🥈", "🥉"]
     leaderboard_text = ""
     
+    if not interaction.guild:
+        return await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+    
     for i, leader in enumerate(leaders):
         try:
             user = await interaction.guild.fetch_member(leader['user_id'])
@@ -1460,23 +2055,28 @@ async def balance(interaction: discord.Interaction, member: Optional[discord.Mem
     embed.set_thumbnail(url=target.display_avatar.url)
     await interaction.response.send_message(embed=embed)
 
-# =========================
-# MUSIC COMMANDS
-# =========================
-
+# Music Commands
 @bot.tree.command(name="join")
 async def join(interaction: discord.Interaction):
     """Join your voice channel"""
-    if not interaction.user.voice:
+    if not interaction.guild:
+        return await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+    if not isinstance(interaction.user, discord.Member) or not interaction.user.voice:
         return await interaction.response.send_message("❌ You need to be in a voice channel!", ephemeral=True)
     
+    channel = interaction.user.voice.channel
+    if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
+        return await interaction.response.send_message("❌ You must be in a voice or stage channel!", ephemeral=True)
+    
     player = get_music_player(interaction.guild)
-    await player.join(interaction.user.voice.channel)
-    await interaction.response.send_message(f"🎵 Joined {interaction.user.voice.channel.mention}")
+    await player.join(channel)
+    await interaction.response.send_message(f"🎵 Joined {channel.mention}")
 
 @bot.tree.command(name="leave")
 async def leave(interaction: discord.Interaction):
     """Leave the voice channel"""
+    if not interaction.guild:
+        return await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
     player = get_music_player(interaction.guild)
     if not player.voice_client:
         return await interaction.response.send_message("❌ Not in a voice channel!", ephemeral=True)
@@ -1490,7 +2090,9 @@ async def play(interaction: discord.Interaction, file: Optional[discord.Attachme
     if not file and not url:
         return await interaction.response.send_message("❌ Please provide an MP3 file or URL!", ephemeral=True)
     
-    if not interaction.user.voice:
+    if not interaction.guild:
+        return await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+    if not isinstance(interaction.user, discord.Member) or not interaction.user.voice:
         return await interaction.response.send_message("❌ You need to be in a voice channel!", ephemeral=True)
     
     await interaction.response.defer()
@@ -1499,7 +2101,10 @@ async def play(interaction: discord.Interaction, file: Optional[discord.Attachme
     
     # Join voice channel if not connected
     if not player.voice_client:
-        await player.join(interaction.user.voice.channel)
+        channel = interaction.user.voice.channel
+        if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
+            return await interaction.followup.send("❌ You must be in a voice or stage channel!")
+        await player.join(channel)
     
     try:
         if file:
@@ -1513,7 +2118,7 @@ async def play(interaction: discord.Interaction, file: Optional[discord.Attachme
             
             # Create a temporary file
             temp_dir = tempfile.gettempdir()
-            temp_path = os.path.join(temp_dir, f"{interaction.id}_{file.filename}")
+            temp_path = Path(temp_dir) / f"{interaction.id}_{file.filename}"
             
             # Download the file
             await file.save(temp_path)
@@ -1521,13 +2126,15 @@ async def play(interaction: discord.Interaction, file: Optional[discord.Attachme
                 return await interaction.followup.send("❌ Failed to save audio file.")
 
             song = Song(
-                source=temp_path,
+                source=str(temp_path),
                 title=file.filename,
                 requester=interaction.user,
                 is_file=True
             )
         else:
             # Use URL directly
+            if not url:
+                return await interaction.followup.send("❌ URL cannot be empty!")
             song = Song(
                 source=url,
                 title=url.split('/')[-1] or "Audio Stream",
@@ -1562,6 +2169,8 @@ async def play(interaction: discord.Interaction, file: Optional[discord.Attachme
 @bot.tree.command(name="pause")
 async def pause(interaction: discord.Interaction):
     """Pause the current song"""
+    if not interaction.guild:
+        return await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
     player = get_music_player(interaction.guild)
     if not player.voice_client or not player.voice_client.is_playing():
         return await interaction.response.send_message("❌ Nothing is playing!", ephemeral=True)
@@ -1572,6 +2181,8 @@ async def pause(interaction: discord.Interaction):
 @bot.tree.command(name="resume")
 async def resume(interaction: discord.Interaction):
     """Resume the current song"""
+    if not interaction.guild:
+        return await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
     player = get_music_player(interaction.guild)
     if not player.voice_client or not player.voice_client.is_paused():
         return await interaction.response.send_message("❌ Nothing is paused!", ephemeral=True)
@@ -1582,6 +2193,8 @@ async def resume(interaction: discord.Interaction):
 @bot.tree.command(name="stop")
 async def stop(interaction: discord.Interaction):
     """Stop playback and clear the queue"""
+    if not interaction.guild:
+        return await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
     player = get_music_player(interaction.guild)
     if not player.voice_client:
         return await interaction.response.send_message("❌ Not playing anything!", ephemeral=True)
@@ -1593,6 +2206,8 @@ async def stop(interaction: discord.Interaction):
 @bot.tree.command(name="skip")
 async def skip(interaction: discord.Interaction):
     """Skip the current song"""
+    if not interaction.guild:
+        return await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
     player = get_music_player(interaction.guild)
     if not player.voice_client or not player.voice_client.is_playing():
         return await interaction.response.send_message("❌ Nothing is playing!", ephemeral=True)
@@ -1603,6 +2218,8 @@ async def skip(interaction: discord.Interaction):
 @bot.tree.command(name="queue")
 async def queue(interaction: discord.Interaction):
     """View the current music queue"""
+    if not interaction.guild:
+        return await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
     player = get_music_player(interaction.guild)
     
     if not player.current_song and not player.queue:
@@ -1640,6 +2257,8 @@ async def queue(interaction: discord.Interaction):
 @bot.tree.command(name="nowplaying")
 async def nowplaying(interaction: discord.Interaction):
     """Show what's currently playing"""
+    if not interaction.guild:
+        return await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
     player = get_music_player(interaction.guild)
     
     if not player.current_song:
@@ -1662,6 +2281,8 @@ async def volume(interaction: discord.Interaction, level: int):
     if not 0 <= level <= 100:
         return await interaction.response.send_message("❌ Volume must be between 0 and 100!", ephemeral=True)
     
+    if not interaction.guild:
+        return await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
     player = get_music_player(interaction.guild)
     player.set_volume(level / 100)
     await interaction.response.send_message(f"🔊 Volume set to {level}%")
@@ -1669,6 +2290,8 @@ async def volume(interaction: discord.Interaction, level: int):
 @bot.tree.command(name="loop")
 async def loop(interaction: discord.Interaction):
     """Toggle loop mode for current song"""
+    if not interaction.guild:
+        return await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
     player = get_music_player(interaction.guild)
     player.loop = not player.loop
     
@@ -1676,10 +2299,7 @@ async def loop(interaction: discord.Interaction):
     emoji = "🔁" if player.loop else "➡️"
     await interaction.response.send_message(f"{emoji} Loop mode {status}")
 
-# =========================
-# EMBED COMMANDS
-# =========================
-
+# Embed Commands
 @bot.tree.command(name="embed_create")
 @is_staff()
 async def embed_create(interaction: discord.Interaction, name: str):
@@ -1691,11 +2311,14 @@ async def embed_create(interaction: discord.Interaction, name: str):
 @is_staff()
 async def embed_post(interaction: discord.Interaction, name: str, channel: Optional[discord.TextChannel] = None):
     """Post a saved embed with header and footer"""
-    embed_data = EmbedManager.get(name)
+    embed_data = EmbedManager.get_embed(interaction.user.id, name)
     if not embed_data:
         return await interaction.response.send_message("❌ Embed not found.", ephemeral=True)
     
     target = channel or interaction.channel
+    if not isinstance(target, discord.TextChannel):
+        return await interaction.response.send_message("❌ Can only post to text channels.", ephemeral=True)
+    
     await target.send(embed=build_announcement_embed("header"))
     await target.send(embed=build_embed_from_data(embed_data))
     await target.send(embed=build_announcement_embed("footer"))
@@ -1705,7 +2328,7 @@ async def embed_post(interaction: discord.Interaction, name: str, channel: Optio
 @is_staff()
 async def embed_list(interaction: discord.Interaction):
     """List all saved embed templates"""
-    embeds = EmbedManager.list_all()
+    embeds = EmbedManager.list_all(interaction.user.id)
     if not embeds:
         return await interaction.response.send_message("🔭 No embeds saved.", ephemeral=True)
     
@@ -1720,20 +2343,24 @@ async def embed_list(interaction: discord.Interaction):
 @is_staff()
 async def embed_delete(interaction: discord.Interaction, name: str):
     """Delete an embed template"""
-    if EmbedManager.delete(name):
+    if EmbedManager.delete_embed(interaction.user.id, name):
         await interaction.response.send_message(f"✅ Deleted embed **{name}**.", ephemeral=True)
     else:
         await interaction.response.send_message("❌ Embed not found.", ephemeral=True)
+@bot.tree.command(name="embed_edit")
+@is_staff()
+async def embed_edit(interaction: discord.Interaction, name: str):
+    """Edit an embed template"""
+    await interaction.response.send_modal(EmbedBuilderModal(name))
 
-# =========================
-# SERVER BACKUP COMMANDS
-# =========================
-
+# Server Backup Commands
 @bot.tree.command(name="backup_ship")
 @is_staff()
 async def backup_ship(interaction: discord.Interaction):
     """Create a backup and save it to the database"""
     await interaction.response.defer(ephemeral=True)
+    if not interaction.guild:
+        return await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
     data = await BackupManager.create_backup(interaction.guild)
     if BackupManager.save_to_db(interaction.guild.id, data):
         await interaction.followup.send("💾 Ship backed up to database.", ephemeral=True)
@@ -1745,6 +2372,8 @@ async def backup_ship(interaction: discord.Interaction):
 async def restore_ship(interaction: discord.Interaction):
     """Restore the latest backup from the database"""
     await interaction.response.defer(ephemeral=True)
+    if not interaction.guild:
+        return await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
     data = BackupManager.load_from_db(interaction.guild.id)
     
     if not data:
@@ -1769,22 +2398,43 @@ async def sync_tree(interaction: discord.Interaction):
     except Exception as e:
         await interaction.followup.send(f"❌ Sync error: {e}", ephemeral=True)
 
-# =========================
-# PLUSHIE COMMANDS
-# =========================
+@bot.tree.command(name="export_backup")
+@is_staff()
+async def export_backup(interaction: discord.Interaction):
+    """Export the latest backup to a JSON file"""
+    await interaction.response.defer(ephemeral=True)
+    if not interaction.guild:
+        return await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
+    data = BackupManager.load_from_db(interaction.guild.id)
+    if not data:
+        return await interaction.followup.send("⚠️ No ship backup found.", ephemeral=True)
+    json_data_bytes = json.dumps(data, indent=4).encode('utf-8')
+    file = discord.File(fp=io.BytesIO(json_data_bytes), filename="ship_backup.json")
+    await interaction.followup.send(file=file, ephemeral=True)
 
+@bot.tree.command(name="import_backup")
+@is_staff()
+async def import_backup(interaction: discord.Interaction, file: discord.Attachment):
+    """Import a backup from a JSON file"""
+    await interaction.response.defer(ephemeral=True)
+    if not interaction.guild:
+        return await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
+    if file.content_type != "application/json":
+        return await interaction.followup.send("❌ Invalid file type. Only JSON files are allowed.", ephemeral=True),
+
+# Plushie Commands
 @bot.tree.command(name="plushie_scan")
 async def plushie_scan(interaction: discord.Interaction, photo: Optional[discord.Attachment] = None):
     """Register a new plushie to your collection"""
-    await interaction.response.send_modal(PlushieModal(photo.url if photo else None, interaction.user.id, interaction.channel))
+    await interaction.response.send_modal(PlushieModal(await photo.read() if photo else None))
 
 @bot.tree.command(name="plushie_edit")
 async def plushie_edit(interaction: discord.Interaction, name: str, photo: Optional[discord.Attachment] = None):
     """Edit an existing plushie in your collection"""
     plushie = PlushieManager.get_one(interaction.user.id, name)
     if not plushie:
-        return await interaction.response.send_message("❌ You don't have a plushie with that name.", ephemeral=True)
-    await interaction.response.send_modal(PlushieEditModal(interaction.user.id, name, photo.url if photo else None, plushie))
+        return await interaction.response.send_message("❌ You don't have a plushie with that name.", ephemeral=True) # type: ignore
+    await interaction.response.send_modal(PlushieEditModal(name, interaction.user.id, await photo.read() if photo else None))
 
 @bot.tree.command(name="plushie_info")
 async def plushie_info(interaction: discord.Interaction, owner: discord.Member, name: str):
@@ -1808,7 +2458,7 @@ async def plushie_info(interaction: discord.Interaction, owner: discord.Member, 
         file = discord.File(io.BytesIO(plushie["image_data"]), "plushie.jpg")
         embed.set_image(url="attachment://plushie.jpg")
 
-    await interaction.response.send_message(embed=embed, file=file)
+    await interaction.response.send_message(embed=embed, file=file if file else discord.utils.MISSING)
 
 @bot.tree.command(name="plushie_list")
 async def plushie_list(interaction: discord.Interaction, owner: Optional[discord.Member] = None):
@@ -1837,15 +2487,15 @@ async def plushie_remove(interaction: discord.Interaction, name: str):
     else:
         await interaction.response.send_message("❌ Plushie not found.", ephemeral=True)
 
-# =========================
-# MISSION & ENCOURAGEMENT
-# =========================
-
+# Mission & Encouragement Commands
 @bot.tree.command(name="mission")
 async def mission(interaction: discord.Interaction):
     """Get a random space mission to complete!"""
-    missions = load_json_file(MISSIONS_FILE, ["🚀 Take a break and stretch for 30 seconds!"])
-    mission_text = random.choice(missions)
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT message FROM missions ORDER BY RANDOM() LIMIT 1")
+            mission_data = cur.fetchone()
+            mission_text = mission_data['message'] if mission_data else "🚀 Take a break and stretch for 30 seconds!"
     
     # Store active mission
     with DatabasePool.get_conn() as conn:
@@ -1900,8 +2550,9 @@ async def mission_report(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
     
     # Track stats and check achievements
-    mission_count = AchievementManager.increment_stat(interaction.user.id, "missions_completed")
-    await AchievementManager.check_and_award(interaction.user.id, "missions_completed", mission_count, interaction.channel)
+    mission_count = Achievement.increment_stat(interaction.user.id, "missions_completed")
+    channel = interaction.channel if isinstance(interaction.channel, discord.TextChannel) else None
+    await Achievement.check_and_award(interaction.user.id, "missions_completed", mission_count, channel)
 
 @bot.tree.command(name="mission_status")
 async def mission_status(interaction: discord.Interaction):
@@ -1928,9 +2579,12 @@ async def mission_status(interaction: discord.Interaction):
 @bot.tree.command(name="encourage")
 async def encourage(interaction: discord.Interaction, member: Optional[discord.Member] = None):
     """Send cosmic encouragement to yourself or another crew member!"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT message FROM encouragements ORDER BY RANDOM() LIMIT 1")
+            encouragement_data = cur.fetchone()
+            encouragement = encouragement_data['message'] if encouragement_data else "is sending you positive vibes! ✨"
     target = member or interaction.user
-    encouragements = load_json_file(ENCOURAGEMENTS_FILE, ["is sending you positive vibes! ✨"])
-    encouragement = random.choice(encouragements)
     
     embed = discord.Embed(
         title="✨ Cosmic Encouragement",
@@ -1942,84 +2596,103 @@ async def encourage(interaction: discord.Interaction, member: Optional[discord.M
     await interaction.response.send_message(embed=embed)
     
     # Track stats and check achievements
-    given_count = AchievementManager.increment_stat(interaction.user.id, "encouragements_given")
-    received_count = AchievementManager.increment_stat(target.id, "encouragements_received")
+    given_count = Achievement.increment_stat(interaction.user.id, "encouragements_given")
+    received_count = Achievement.increment_stat(target.id, "encouragements_received")
     
-    await AchievementManager.check_and_award(interaction.user.id, "encouragements_given", given_count, interaction.channel)
-    await AchievementManager.check_and_award(target.id, "encouragements_received", received_count, interaction.channel)
+    channel = interaction.channel if isinstance(interaction.channel, discord.TextChannel) else None
 
-@bot.tree.command(name="space_fact")
-async def space_fact(interaction: discord.Interaction):
-    """Learn a random space fact!"""
-    facts = load_json_file(SPACE_FACTS_FILE, ["Space is really big!"])
-    fact_text = random.choice(facts)
-    
-    embed = discord.Embed(
-        title="🔭 Space Fact",
-        description=fact_text,
-        color=discord.Color.purple()
-    )
-    embed.set_footer(text="Mission Control Educational Program")
-    await interaction.response.send_message(embed=embed)
-    
-    # Track stats and check achievements
-    facts_count = AchievementManager.increment_stat(interaction.user.id, "facts_learned")
-    await AchievementManager.check_and_award(interaction.user.id, "facts_learned", facts_count, interaction.channel)
+    await Achievement.check_and_award(interaction.user.id, "encouragements_given", given_count, channel)
+    await Achievement.check_and_award(target.id, "encouragements_received", received_count, channel)
 
 @bot.tree.command(name="daily_mission")
 @is_staff()
 async def daily_mission(interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
     """Post a daily mission with header and footer (Staff only)"""
     target = channel or interaction.channel
-    missions = load_json_file(MISSIONS_FILE, ["Complete a task today!"])
-    mission_text = random.choice(missions)
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT message FROM missions ORDER BY RANDOM() LIMIT 1")
+            mission_data = cur.fetchone()
+            mission_text = mission_data['message'] if mission_data else "Complete a task today!"
     
-    await target.send(embed=build_announcement_embed("header"))
-    
-    mission_embed = discord.Embed(
-        title="🎯 Daily Mission",
-        description=mission_text,
-        color=discord.Color.blue()
-    )
-    mission_embed.set_footer(text=f"Posted by {interaction.user.display_name} • Complete this mission today!")
-    await target.send(embed=mission_embed)
-    
-    await target.send(embed=build_announcement_embed("footer"))
-    await interaction.response.send_message("✅ Daily mission posted!", ephemeral=True)
+    if isinstance(target, discord.TextChannel):
+        await target.send(embed=build_announcement_embed("header"))
+        
+        mission_embed = discord.Embed(
+            title="🎯 Daily Mission",
+            description=mission_text,
+            color=discord.Color.blue()
+        )
+        mission_embed.set_footer(text=f"Posted by {interaction.user.display_name} • Complete this mission today!")
+        await target.send(embed=mission_embed)
+        
+        await target.send(embed=build_announcement_embed("footer"))
+        await interaction.response.send_message("✅ Daily mission posted!", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ Daily mission can only be posted to a text channel.", ephemeral=True)
 
 @bot.tree.command(name="encourage_post")
 @is_staff()
 async def encourage_post(interaction: discord.Interaction, member: discord.Member, channel: Optional[discord.TextChannel] = None):
     """Post an encouragement announcement with header and footer (Staff only)"""
     target = channel or interaction.channel
-    encouragements = load_json_file(ENCOURAGEMENTS_FILE, ["is being appreciated! ✨"])
-    encouragement = random.choice(encouragements)
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT message FROM encouragements ORDER BY RANDOM() LIMIT 1")
+            encouragement_data = cur.fetchone()
+            encouragement = encouragement_data['message'] if encouragement_data else "is being appreciated! ✨"
     
-    await target.send(embed=build_announcement_embed("header"))
+    if isinstance(target, discord.TextChannel):
+        await target.send(embed=build_announcement_embed("header"))
+        encourage_embed = discord.Embed(
+            title="✨ Cosmic Encouragement",
+            description=f"**{member.display_name}** {encouragement}",
+            color=discord.Color.gold()
+        )
+        encourage_embed.set_thumbnail(url=member.display_avatar.url)
+        encourage_embed.set_footer(text=f"Posted by {interaction.user.display_name}")
+        await target.send(embed=encourage_embed)
+        
+        await target.send(embed=build_announcement_embed("footer"))
+        await interaction.response.send_message(f"✅ Encouragement posted for {member.display_name}!", ephemeral=True)
+
+        encourage_embed = discord.Embed(
+            title="✨ Crew Encouragement",
+            description=f"**Mission Control** {encouragement}",
+            color=discord.Color.gold()
+        )
+        encourage_embed.set_thumbnail(url=member.display_avatar.url)
+        encourage_embed.set_footer(text=f"To: {member.display_name}")
+        await target.send(embed=encourage_embed)
+        await target.send(embed=build_announcement_embed("footer"))
+        await interaction.response.send_message("✅ Encouragement posted!", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ Encouragement can only be posted to a text channel.", ephemeral=True)
+
+# FUN Commands
+@bot.tree.command(name="space_fact")
+async def space_fact(interaction: discord.Interaction):
+    """Learn a random space fact!"""
+    with DatabasePool.get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT fact FROM space_facts ORDER BY RANDOM() LIMIT 1")
+            fact_data = cur.fetchone()
+            fact_text = fact_data['fact'] if fact_data else "The universe is vast and full of wonders!"
     
-    encourage_embed = discord.Embed(
-        title="✨ Crew Encouragement",
-        description=f"**Mission Control** {encouragement}",
-        color=discord.Color.gold()
+    embed = discord.Embed(
+        title="🌌 Space Fact!",
+        description=fact_text,
+        color=discord.Color.purple()
     )
-    encourage_embed.set_thumbnail(url=member.display_avatar.url)
-    encourage_embed.set_footer(text=f"To: {member.display_name}")
-    await target.send(embed=encourage_embed)
-    
-    await target.send(embed=build_announcement_embed("footer"))
-    await interaction.response.send_message("✅ Encouragement posted!", ephemeral=True)
-
-# =========================
-# FUN SPACE COMMANDS
-# =========================
-
+    embed.set_footer(text="Knowledge is power, pilot!")
+    await interaction.response.send_message(embed=embed)
 @bot.tree.command(name="launch")
 async def launch(interaction: discord.Interaction):
     """Launch a rocket with a countdown!"""
     embed = discord.Embed(
         title="🚀 Rocket Launch Sequence",
         description="Preparing for liftoff...",
-        color=discord.Color.orange()
+        color=discord.Color(int(PALETTE['PB'].replace("#", ""), 16))
     )
     await interaction.response.send_message(embed=embed)
     message = await interaction.original_response()
@@ -2047,7 +2720,7 @@ async def orbit(interaction: discord.Interaction):
                 count = cur.fetchone()[0]
                 
                 # Optional: Count users with an 'active' mission in the last hour
-                cur.execute("SELECT COUNT(*) FROM active_missions WHERE started_at > NOW() - INTERVAL '1 hour'")
+                cur.execute("SELECT COUNT(*) FROM active_missions WHERE started_at > NOW() - INTERVAL '12 hours'")
                 active_now = cur.fetchone()[0]
 
         embed = discord.Embed(
@@ -2065,34 +2738,10 @@ async def orbit(interaction: discord.Interaction):
         embed.set_footer(text="Safe flying, pilot! 🚀")
         
         await interaction.response.send_message(embed=embed)
-
     except Exception as e:
         logger.error(f"Error in orbit command: {e}")
         await interaction.response.send_message("❌ Failed to retrieve orbital data from Mission Control.", ephemeral=True)
 
-@bot.tree.command(name="salvage_light", description="Scan nearby space debris for scrap and credits")
-@app_commands.checks.cooldown(1, 300, key=lambda i: i.user.id) # 5 min cooldown
-async def salvage_light(interaction: discord.Interaction):
-    try:
-        outcomes = [
-            {"msg": "You found a cluster of old satellite parts!", "credits": 50, "xp": 10},
-            {"msg": "You recovered some frozen fuel from a derelict ship.", "credits": 100, "xp": 20},
-            {"msg": "Your scanners picked up nothing but cosmic dust.", "credits": 0, "xp": 2},
-        ]
-        outcome = random.choice(outcomes)
-        
-        with DatabasePool.get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("UPDATE ships SET credits = credits + %s, xp = xp + %s WHERE user_id = %s",
-                            (outcome['credits'], outcome['xp'], str(interaction.user.id)))
-        
-        embed = discord.Embed(title="🛰️ Salvage Operation", description=outcome['msg'], color=0x7395cc)
-        if outcome['credits'] > 0:
-            embed.add_field(name="Rewards", value=f"💰 {outcome['credits']} Credits\n✨ {outcome['xp']} XP")
-        await interaction.response.send_message(embed=embed)
-    except Exception as e:
-        logger.error(f"Error in salvage command: {e}")
-        await interaction.response.send_message("❌ Failed to complete salvage operation.", ephemeral=True)
 @bot.tree.command(name="planet")
 async def planet(interaction: discord.Interaction):
     """Discover a random planet!"""
@@ -2117,8 +2766,8 @@ async def planet(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
     
     # Track stats and check achievements
-    planets_count = AchievementManager.increment_stat(interaction.user.id, "planets_discovered")
-    await AchievementManager.check_and_award(interaction.user.id, "planets_discovered", planets_count, interaction.channel)
+    planets_count = Achievement.increment_stat(interaction.user.id, "planets_discovered")
+    await Achievement.check_and_award(interaction.user.id, "planets_discovered", planets_count, interaction.channel)
 
 @bot.tree.command(name="spacewalk")
 async def spacewalk(interaction: discord.Interaction):
@@ -2146,8 +2795,8 @@ async def spacewalk(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
     
     # Track stats and check achievements
-    spacewalks_count = AchievementManager.increment_stat(interaction.user.id, "spacewalks_taken")
-    await AchievementManager.check_and_award(interaction.user.id, "spacewalks_taken", spacewalks_count, interaction.channel)
+    spacewalks_count = Achievement.increment_stat(interaction.user.id, "spacewalks_taken")
+    await Achievement.check_and_award(interaction.user.id, "spacewalks_taken", spacewalks_count, interaction.channel)
 
 @bot.tree.command(name="stardate")
 async def stardate(interaction: discord.Interaction):
@@ -2166,6 +2815,8 @@ async def stardate(interaction: discord.Interaction):
 @bot.tree.command(name="crew_manifest")
 async def crew_manifest(interaction: discord.Interaction):
     """View the current crew statistics"""
+    if not interaction.guild:
+        return await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
     guild = interaction.guild
     total = guild.member_count
     humans = len([m for m in guild.members if not m.bot])
@@ -2180,10 +2831,6 @@ async def crew_manifest(interaction: discord.Interaction):
     embed.add_field(name="📡 Active Rate", value=f"{(online/humans*100):.1f}%", inline=True)
     embed.set_footer(text=f"Space Station: {guild.name}")
     await interaction.response.send_message(embed=embed)
-
-# =========================
-# ADDITIONAL INTERACTIVE COMMANDS
-# =========================
 
 @bot.tree.command(name="roll")
 async def roll(interaction: discord.Interaction, sides: int = 6):
@@ -2250,6 +2897,8 @@ async def avatar(interaction: discord.Interaction, member: Optional[discord.Memb
 @bot.tree.command(name="serverinfo")
 async def serverinfo(interaction: discord.Interaction):
     """Display server information"""
+    if not interaction.guild:
+        return await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
     guild = interaction.guild
     embed = discord.Embed(title=f"📋 {guild.name}", color=discord.Color.blue())
     if guild.icon:
@@ -2266,22 +2915,49 @@ async def serverinfo(interaction: discord.Interaction):
 @bot.tree.command(name="userinfo")
 async def userinfo(interaction: discord.Interaction, member: Optional[discord.Member] = None):
     """Display user information"""
-    target = member or interaction.user
-    embed = discord.Embed(title=f"👤 {target.display_name}", color=target.color)
-    embed.set_thumbnail(url=target.display_avatar.url)
     
-    embed.add_field(name="Username", value=str(target), inline=True)
-    embed.add_field(name="ID", value=str(target.id), inline=True)
-    
-    if target.joined_at:
-        embed.add_field(name="Joined Server", value=f"<t:{int(target.joined_at.timestamp())}:R>", inline=False)
-    embed.add_field(name="Account Created", value=f"<t:{int(target.created_at.timestamp())}:R>", inline=False)
-    
-    roles = [role.mention for role in target.roles if role.name != "@everyone"]
-    if roles:
-        embed.add_field(name=f"Roles [{len(roles)}]", value=" ".join(roles), inline=False)
-    
-    await interaction.response.send_message(embed=embed)
+    if interaction.guild:
+        # In a guild, target is always a Member
+        target = member if member else interaction.user
+        if not isinstance(target, discord.Member):
+            return await interaction.response.send_message(
+                "❌ Cannot fetch member information.",
+                ephemeral=True
+            )
+        
+        embed = discord.Embed(title=f"👤 {target.display_name}", color=target.color)
+        embed.set_thumbnail(url=target.display_avatar.url)
+        
+        embed.add_field(name="Username", value=str(target), inline=True)
+        embed.add_field(name="ID", value=str(target.id), inline=True)
+        
+        if target.joined_at:
+            embed.add_field(name="Joined Server", value=f"<t:{int(target.joined_at.timestamp())}:R>", inline=False)
+        embed.add_field(name="Account Created", value=f"<t:{int(target.created_at.timestamp())}:R>", inline=False)
+        
+        roles = [role.mention for role in target.roles if role.name != "@everyone"]
+        if roles:
+            embed.add_field(name=f"Roles [{len(roles)}]", value=" ".join(roles), inline=False)
+        
+        await interaction.response.send_message(embed=embed)
+    else:
+        # In a DM, can only show info about the command user
+        if member:
+            return await interaction.response.send_message(
+                "❌ Cannot get member information in DMs.",
+                ephemeral=True
+            )
+        
+        target = interaction.user
+        
+        embed = discord.Embed(title=f"👤 {target.display_name}", color=discord.Color.blue())
+        embed.set_thumbnail(url=target.display_avatar.url)
+        
+        embed.add_field(name="Username", value=str(target), inline=True)
+        embed.add_field(name="ID", value=str(target.id), inline=True)
+        embed.add_field(name="Account Created", value=f"<t:{int(target.created_at.timestamp())}:R>", inline=False)
+        
+        await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="shop")
 async def shop(interaction: discord.Interaction):
@@ -2302,9 +2978,10 @@ async def shop(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="buy")
-async def buy(interaction: discord.Interaction, item_id: str, quantity: int = 1):
+async def buy(interaction: discord.Interaction, item_id: int, quantity: int = 1):
     """Buy an item from the shop"""
-    item = SHOP_ITEMS.get(item_id)
+    # Convert int to string for dictionary lookup
+    item = SHOP_ITEMS.get(str(item_id))
     if not item:
         return await interaction.response.send_message("❌ Item not found.", ephemeral=True)
 
@@ -2333,13 +3010,16 @@ async def buy(interaction: discord.Interaction, item_id: str, quantity: int = 1)
                 (interaction.user.id, balance - cost, cost)
             )
 
+    # Use item_id as integer for database
     InventoryManager.add_item(interaction.user.id, item_id, quantity)
 
-    purchased = AchievementManager.increment_stat(
+    # Fix: Use Achievement, not AchievementManager
+    purchased = Achievement.increment_stat(
         interaction.user.id, "items_purchased", quantity
     )
-    await AchievementManager.check_and_award(
-        interaction.user.id, "items_purchased", purchased, interaction.channel
+    channel = interaction.channel if isinstance(interaction.channel, discord.TextChannel) else None
+    await Achievement.check_and_award(
+        interaction.user.id, "items_purchased", purchased, channel
     )
 
     await interaction.response.send_message(
@@ -2441,10 +3121,10 @@ async def ship_upgrade(interaction: discord.Interaction, component: str):
             )
 
     if ShipManager.upgrade_ship(interaction.user.id, component):
-        upgraded = AchievementManager.increment_stat(
+        upgraded = Achievement.increment_stat(
             interaction.user.id, "ship_upgrades"
         )
-        await AchievementManager.check_and_award(
+        await Achievement.check_and_award(
             interaction.user.id, "ship_upgrades", upgraded, interaction.channel
         )
 
@@ -2454,14 +3134,13 @@ async def ship_upgrade(interaction: discord.Interaction, component: str):
     else:
         await interaction.response.send_message("❌ Failed to upgrade ship.")
 
-# =========================
-# MODERATOR APPLICATION COMMANDS
-# =========================
-
+# Moderator application commands
 @bot.tree.command(name="apply_mod")
 async def apply_mod(interaction: discord.Interaction):
     """Apply to become a moderator for the Starflight Pilot crew"""
     await interaction.response.send_modal(ModApplicationModal())
+
+# In the /mod_applications command (around line 2650), add this near the top after checking status:
 
 @bot.tree.command(name="mod_applications")
 @is_staff()
@@ -2500,17 +3179,22 @@ async def mod_applications(interaction: discord.Interaction, status: Optional[st
         color=discord.Color.blue()
     )
     
+    # Define status emoji mapping
+    status_emoji_map = {"pending": "⏳", "accepted": "✅", "rejected": "❌"}
+    
     for app in applications[:10]:  # Show first 10
         try:
-            user = await interaction.guild.fetch_member(app['user_id'])
-            status_emoji = {"pending": "⏳", "accepted": "✅", "rejected": "❌"}.get(app['status'], "❓")
-            
-            embed.add_field(
-                name=f"{status_emoji} {user.display_name} (ID: {app['id']})",
-                value=f"Submitted: <t:{int(app['submitted_at'].timestamp())}:R>\nUse `/mod_application_view {app['id']}` to review",
-                inline=False
-            )
+            if interaction.guild:
+                user = await interaction.guild.fetch_member(app['user_id'])
+                status_emoji = status_emoji_map.get(app['status'], "❓")
+                
+                embed.add_field(
+                    name=f"{status_emoji} {user.display_name} (ID: {app['id']})",
+                    value=f"Submitted: <t:{int(app['submitted_at'].timestamp())}:R>\nUse `/mod_application_view {app['id']}` to review",
+                    inline=False
+                )
         except:
+            status_emoji = status_emoji_map.get(app['status'], "❓")
             embed.add_field(
                 name=f"{status_emoji} Unknown User (ID: {app['id']})",
                 value=f"User ID: {app['user_id']}\nSubmitted: <t:{int(app['submitted_at'].timestamp())}:R>",
@@ -2748,7 +3432,7 @@ async def my_application(interaction: discord.Interaction):
 async def salvage(interaction: discord.Interaction):
     ship = ShipManager.get_ship(interaction.user.id)
     if not ship:
-        return await interaction.response.send_message("❌ You don't have a ship! Use `/register_ship` first.", ephemeral=True)
+        return await interaction.response.send_message("❌ You don't have a ship! Use `/ship_create` first.", ephemeral=True)
     
     if ship['health'] <= 0:
         return await interaction.response.send_message("⚠️ Your ship is too damaged to fly! Use `/repair_ship` first.", ephemeral=True)
@@ -2767,14 +3451,20 @@ async def salvage(interaction: discord.Interaction):
         )
     # 45% chance of finding an item
     elif roll < 0.70:
-        loot_pool = ["fuel", "stardust", "repair_kit", "nebula_crystal"]
+        # Use integer item IDs that match the database
+        loot_pool = [1, 2, 3]  # Fuel Cell, Repair Kit, Stardust
         item_id = random.choice(loot_pool)
         InventoryManager.add_item(interaction.user.id, item_id)
-        AchievementManager.increment_stat(interaction.user.id, "salvages_completed")
+        
+        # Fix: Use Achievement, not AchievementManager
+        Achievement.increment_stat(interaction.user.id, "salvages_completed")
+        
+        # Get item name from SHOP_ITEMS
+        item_name = SHOP_ITEMS[str(item_id)]["name"]
         
         embed = discord.Embed(
             title="📦 Successful Salvage",
-            description=f"You successfully recovered 1x **{item_id.replace('_', ' ').title()}** from the wreckage!",
+            description=f"You successfully recovered 1x **{item_name}** from the wreckage!",
             color=discord.Color.green()
         )
     # 30% chance of finding nothing
@@ -2787,6 +3477,8 @@ async def salvage(interaction: discord.Interaction):
     
     await interaction.followup.send(embed=embed)
 
+# Replace the /repair_ship command (around line 2955):
+
 @bot.tree.command(name="repair_ship", description="Use a repair kit to fix your ship's hull")
 async def repair_ship_cmd(interaction: discord.Interaction):
     ship = ShipManager.get_ship(interaction.user.id)
@@ -2796,7 +3488,8 @@ async def repair_ship_cmd(interaction: discord.Interaction):
     if ship['health'] >= ship['max_health']:
         return await interaction.response.send_message("✅ Your ship is already at full health!", ephemeral=True)
 
-    has_kit = InventoryManager.remove_item(interaction.user.id, "repair_kit", 1)
+    # Use integer item_id (2 is Repair Kit)
+    has_kit = InventoryManager.remove_item(interaction.user.id, 2, 1)
     if not has_kit:
         return await interaction.response.send_message("❌ You don't have any **Repair Kits** in your inventory! Buy one from the `/shop`.", ephemeral=True)
     
