@@ -327,10 +327,10 @@ def init_default_missions(cur):
     ('103', "📸 Take a 'selfie' in your astronaut gear!"),
     ('104', "🗺️ Draw a map of your house as if it were a space station!"),
     ('105', "🧵 Use a string to measure the 'circumference' of your head!"),
-    ('106', "🧠 Learn the names of the 8 planets in order!")
-    ('107', "📣 Give a 10-second speech as if you just landed on the moon!")
-    ('108', "💧 Use a dropper or straw to move 'liquid fuel' between two cups!")
-    ('109', "🧺 Carry a laundry basket like it's a heavy moon-sample container!")
+    ('106', "🧠 Learn the names of the 8 planets in order!"),
+    ('107', "📣 Give a 10-second speech as if you just landed on the moon!"),
+    ('108', "💧 Use a dropper or straw to move 'liquid fuel' between two cups!"),
+    ('109', "🧺 Carry a laundry basket like it's a heavy moon-sample container!"),
     ('110', "🛏️ Jump on the bed (carefully!) to feel 1 second of weightlessness!"), 
     ('111', "🍎 Eat a 'green giant' (a green grape or apple)!"), 
     ('112', "🔋 Check the battery level on one of your gadgets!"),
