@@ -1,0 +1,1260 @@
+{
+    "roles": [
+        {
+            "id": 1454292052442615800,
+            "name": "🤖 Ship Bots",
+            "color": 3447003,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290390923350300,
+            "name": "🌟 Grand Astronomer",
+            "color": 0,
+            "hoist": true,
+            "permissions": 8
+        },
+        {
+            "id": 1454292055814705200,
+            "name": "🛡️ Space Rangers",
+            "color": 0,
+            "hoist": true,
+            "permissions": 1099675282432
+        },
+        {
+            "id": 1454551116871242000,
+            "name": "🟢 Full Oxygen",
+            "color": 3066993,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454551117777080300,
+            "name": "🟡 Low Fuel",
+            "color": 15844367,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454551118641369000,
+            "name": "🔴 In the Airload",
+            "color": 15158332,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454551119878553900,
+            "name": "🆘 SOS Signal",
+            "color": 10038562,
+            "hoist": true,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290418744299500,
+            "name": "🌠 Nebula Beast",
+            "color": 0,
+            "hoist": true,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290394790494500,
+            "name": "🌜 Moon Guardians",
+            "color": 0,
+            "hoist": true,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290396053115000,
+            "name": "⭐ Little Astronauts",
+            "color": 0,
+            "hoist": true,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454501545369534500,
+            "name": "💫 Space Flip",
+            "color": 0,
+            "hoist": true,
+            "permissions": 0
+        },
+        {
+            "id": 0,
+            "name": "⭐ Star System",
+            "color": 0,
+            "hoist": false,
+            "permissions": 0
+        },
+        {
+            "id": 1454290642174742500,
+            "name": "📡 Signal Watcher",
+            "color": 0,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290420644184300,
+            "name": "👨🏻‍🚀 He/Him",
+            "color": 15791359,
+            "hoist": false,
+            "permissions": 3476544
+        },
+        {
+            "id": 1454290422389149700,
+            "name": "👩🏽‍🚀 She/Her",
+            "color": 15791359,
+            "hoist": false,
+            "permissions": 3476544
+        },
+        {
+            "id": 1454290425291608300,
+            "name": "👨🏼‍🚀 They/Them",
+            "color": 15791359,
+            "hoist": false,
+            "permissions": 3476544
+        },
+        {
+            "id": 1454290427246018800,
+            "name": "👽 It/Its",
+            "color": 15791359,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290430584684500,
+            "name": "🛸 Xe/Xem",
+            "color": 15791359,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290432115872000,
+            "name": "🚀 Ze/Zir",
+            "color": 15791359,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290452282081500,
+            "name": "🪐 Ne/Nem",
+            "color": 15791359,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290454504804600,
+            "name": "🌌 Fae/Faer",
+            "color": 15791359,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290456484774100,
+            "name": "👾 Any/All",
+            "color": 15791359,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290458787315700,
+            "name": "❌ No Pronouns",
+            "color": 15791359,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290460569768000,
+            "name": "🦊 Void Fox",
+            "color": 11650041,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290462910185700,
+            "name": "🐺 Galaxy Wolf",
+            "color": 11650041,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290465154273300,
+            "name": "🐶 Cosmic Puppy",
+            "color": 11650041,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290484510982100,
+            "name": "🐰 Moon Bunny",
+            "color": 11650041,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290486193033500,
+            "name": "🦌 Stellar Fawn",
+            "color": 11650041,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290488059363300,
+            "name": "🐉 Solar Dragon",
+            "color": 11650041,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290490861293800,
+            "name": "🐱 Nebula Cat",
+            "color": 11650041,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290494090903600,
+            "name": "🌑 UTC-11",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290497039241500,
+            "name": "🌒 UTC-10",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290498943586600,
+            "name": "🌓 UTC-9",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290501145727000,
+            "name": "🌔 UTC-8",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290503708311600,
+            "name": "🌕 UTC-7",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290523790639000,
+            "name": "🌖 UTC-6",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290525388804000,
+            "name": "🌗 UTC-5",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290528681070800,
+            "name": "🌘 UTC-4",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290530757251300,
+            "name": "🌙 UTC-3",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3476544
+        },
+        {
+            "id": 1454290533215244300,
+            "name": "☀️ UTC-2",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290535685816300,
+            "name": "🌤️ UTC-1",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290537770385400,
+            "name": "⛅ UTC+0",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290540584505300,
+            "name": "🌥️ UTC+1",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290542262485000,
+            "name": "☁️ UTC+2",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290562977890300,
+            "name": "🌦️ UTC+3",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290564995350800,
+            "name": "🌧️ UTC+4",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290567222530000,
+            "name": "⛈️ UTC+5",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290568363380700,
+            "name": "🌩️ UTC+6",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290570670375200,
+            "name": "🌨️ UTC+7",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290573627228200,
+            "name": "🌫️ UTC+8",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290575946809600,
+            "name": "🌫️ UTC+9",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290578287100000,
+            "name": "🌪️ UTC+10",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290598667485200,
+            "name": "🌫️ UTC+11",
+            "color": 7574988,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290600051609600,
+            "name": "🎨 Coloring Squad",
+            "color": 5532666,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290601507029200,
+            "name": "📚 Storytime Squad",
+            "color": 5532666,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290603515838500,
+            "name": "🧸 Toy Traders Squad",
+            "color": 5532666,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290611502055400,
+            "name": "🎲 Game Squad",
+            "color": 5532666,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290614425354500,
+            "name": "🍪 Snack Squad",
+            "color": 5532666,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290615935308000,
+            "name": "🛏️ Nap Squad",
+            "color": 5532666,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290617680134100,
+            "name": "✂️ Arts & Crafts Squad",
+            "color": 5532666,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290619273970000,
+            "name": "🤗 Cuddle Squad",
+            "color": 5532666,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454290621698412500,
+            "name": "🔇 Muted",
+            "color": 5532666,
+            "hoist": false,
+            "permissions": 0
+        },
+        {
+            "id": 1454551122072047900,
+            "name": "☄️ Comet Zoomies",
+            "color": 3161496,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454551123309629700,
+            "name": "🪐 Ring Collector",
+            "color": 3161496,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454551124857327600,
+            "name": "🛰️ Data Probe",
+            "color": 3161496,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454551125876281300,
+            "name": "🌌 Void Lurker",
+            "color": 3161496,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454551127042560000,
+            "name": "👨‍🔬 Science Officer",
+            "color": 3161496,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454551127814050000,
+            "name": "🍼 Fuel Tank",
+            "color": 3161496,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454551128946643000,
+            "name": "🧸 Zero-G Plush",
+            "color": 3161496,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454551130045681700,
+            "name": "🛌 Gravity Blanket",
+            "color": 3161496,
+            "hoist": false,
+            "permissions": 3525696
+        },
+        {
+            "id": 1454551131073282000,
+            "name": "🤫 Silent Satellite",
+            "color": 3161496,
+            "hoist": false,
+            "permissions": 3525696
+        }
+    ],
+    "categories": [
+        {
+            "id": 1454557113249567000,
+            "name": "📡 Server Stats",
+            "channels": [
+                {
+                    "id": 1454557464434573600,
+                    "name": "💫┊Stickers: 5",
+                    "type": "voice"
+                },
+                {
+                    "id": 1454557530272436200,
+                    "name": "💫┊All emojis: 62",
+                    "type": "voice"
+                },
+                {
+                    "id": 1454557392468709400,
+                    "name": "💫┊Pending members: 0",
+                    "type": "voice"
+                },
+                {
+                    "id": 1454557118064492500,
+                    "name": "💫┊All Members: 42",
+                    "type": "voice"
+                },
+                {
+                    "id": 1454557122103742500,
+                    "name": "💫┊Members: 28",
+                    "type": "voice"
+                },
+                {
+                    "id": 1454557126096846800,
+                    "name": "💫┊Bots: 14",
+                    "type": "voice"
+                },
+                {
+                    "id": 1454708352817827800,
+                    "name": "💫┊Channels: 39",
+                    "type": "voice" 
+                },
+                {
+                    "id": 1454708354294223000,
+                    "name": "💫┊Roles: 84",
+                    "type": "voice"
+                }
+            ],
+            "overwrites": [
+                {
+                    "id": 1453295393021493200,
+                    "deny": 1050624,
+                    "name": "@everyone",
+                    "allow": 1024,
+                    "is_role": true
+                },
+                {
+                    "id": 458276816071950340,
+                    "deny": 0,
+                    "name": "ServerStats",
+                    "allow": 1024,
+                    "is_role": false
+                },
+                {
+                    "id": 1453458262354563300,
+                    "deny": 0,
+                    "name": "ServerStats",
+                    "allow": 8,
+                    "is_role": true
+                }   
+            ]
+        },
+        {
+            "id": 1454524993525383400,
+            "name": "🎛️ Mission Control",
+            "channels": [
+                {
+                    "id": 1453307250633605400,
+                    "name": "💫┊protocol-manual",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 0,
+                            "name": "@everyone",
+                            "allow": 68608,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1453488582944882700,
+                    "name": "💫┊server-announcements",
+                    "type": "news",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 0,
+                            "name": "@everyone",
+                            "allow": 68608,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1453307248825733000,
+                    "name": "💫┊server-map",
+                    "type": "news",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 0,
+                            "name": "@everyone",
+                            "allow": 68608,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1453307251904479200,
+                    "name": "💫┊roles-shuttle-id",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 0,
+                            "name": "@everyone",
+                            "allow": 68608,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1453307253439467500,
+                    "name": "💫┊system-pings",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 0,
+                            "name": "@everyone",
+                            "allow": 68608,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1454288670407266600,
+                    "name": "💫┊galactic-ideas",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 0,
+                            "name": "@everyone",
+                            "allow": 68608,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1454699166134571300,
+                    "name": "💫┊intros",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 0,
+                            "name": "@everyone",
+                            "allow": 68608,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1454699168068010200,
+                    "name": "💫┊mod-intros",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 0,
+                            "name": "@everyone",
+                            "allow": 68608,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1457761654480699600,
+                    "name": "💫┊mod-applications",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 0,
+                            "name": "@everyone",
+                            "allow": 68608,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1453451297671090400,
+                    "name": "💫┊bump-the-ship",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 0,
+                            "name": "@everyone",
+                            "allow": 2048,
+                            "is_role": true
+                        }
+                    ]
+                }
+            ],
+            "overwrites": [
+                {
+                    "id": 1453295393021493200,
+                    "deny": 0,
+                    "name": "@everyone",
+                    "allow": 68608,
+                    "is_role": true
+                },
+                {
+                    "id": 1454693275964412200,
+                    "deny": 0,
+                    "name": "Tupperbox",
+                    "allow": 68608,
+                    "is_role": true
+                }
+            ]
+        },
+        {
+            "id": 1453307256216096800,
+            "name": "⭐ The Starfield",
+            "channels": [
+                {
+                    "id": 1453307257507811300,
+                    "name": "💫┊general-comms-chatter",
+                    "type": "text"
+                },
+                {
+                    "id": 1453307258749456400,
+                    "name": "💫┊stardust-media",
+                    "type": "text"
+                },
+                {
+                    "id": 1453307260100153300,
+                    "name": "💫┊vent-vortex",
+                    "type": "text"
+                },
+                {
+                    "id": 1453451364880613400,
+                    "name": "💫┊counting-the-stars",
+                    "type": "text"
+                },
+                {"id": 1453307260901134300,
+                    "name": "💫┊cozy-cockpit-vc",
+                    "type": "voice"
+                }
+            ],
+            "overwrites": [
+                {
+                    "id": 1453295393021493200,
+                    "deny": 0,
+                    "name": "@everyone",
+                    "allow": 68608,
+                    "is_role": true
+                }
+            ]
+        },
+        {
+            "id": 1454496266888282400,
+            "name": "🛰️ the Moonbase",
+            "channels": [
+                {
+                    "id": 1454496277642477600,
+                    "name": "💫┊moon-guardians-chat",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1454290394790494500,
+                            "deny": 0,
+                            "name": "🌜 Moon Guardians",
+                            "allow": 68608,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454501545369534500,
+                            "deny": 0,
+                            "name": "💫 Space Flip",
+                            "allow": 3072,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 1024,
+                            "name": "@everyone",
+                            "allow": 0,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1454496279202762800,
+                    "name": "💫┊little-astronauts-lounge",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 1024,
+                            "name": "@everyone",
+                            "allow": 0,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454501545369534500,
+                            "deny": 0,
+                            "name": "💫 Space Flip",
+                            "allow": 3072,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454290396053115000,
+                            "deny": 0,
+                            "name": "⭐ Little Astronauts",
+                            "allow": 3072,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1454496280075047000,
+                    "name": "💫┊nebula-beast-den",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 1024,
+                            "name": "@everyone",
+                            "allow": 0,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454501545369534500,
+                            "deny": 0,
+                            "name": "💫 Space Flip",
+                            "allow": 3072,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454290418744299500,
+                            "deny": 0,
+                            "name": "🌠 Nebula Beast",
+                            "allow": 3072,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1454496281891307500,
+                    "name": "💫┊flip-sidehangout",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 1024,
+                            "name": "@everyone",
+                            "allow": 0,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454501545369534500,
+                            "deny": 0,
+                            "name": "💫 Space Flip",
+                            "allow": 3072,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1454496283963167000,
+                    "name": "💫┊lunar-lounge",
+                    "type": "text",
+                    "overwrites": []
+                },
+                {
+                    "id": 1454496285548613600,
+                    "name": "💫┊guardian-resources",
+                    "type": "text",
+                    "overwrites": []
+                },
+                {
+                    "id": 1454957495654285300,
+                    "name": "💫┊bot-commands",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 0,
+                            "name": "@everyone",
+                            "allow": 0,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454693275964412200,
+                            "deny": 67584,
+                            "name": "Tupperbox",
+                            "allow": 1024,
+                            "is_role": true
+                        }
+                    ]
+                }
+            ],
+            "overwrites": [
+                {
+                    "id": 1454693275964412200,
+                    "deny": 68608,
+                    "name": "Tupperbox",
+                    "allow": 0,
+                    "is_role": true
+                }
+            ]
+        },
+        {
+            "id": 1453307262163751000,
+            "name": "🚀 Moon Station",
+            "channels": [
+                {
+                    "id": 1453307263023579100,
+                    "name": "💫┊star-exhibit",
+                    "type": "text"
+                },
+                {
+                    "id": 1453307263581425700,
+                    "name": "💫┊bedtime-stories",
+                    "type": "text"
+                },
+                {
+                    "id": 1453307264822677500,
+                    "name": "💫┊sitter-signals",
+                    "type": "text"
+                },
+                {
+                    "id": 1453307265632436200,
+                    "name": "💫┊nursery-playroom",
+                    "type": "text"
+                },
+                {
+                    "id": 1453481934528184600,
+                    "name": "💫┊ship-library",
+                    "type": "text"
+                },
+                {
+                    "id": 1454496293186572300,
+                    "name": "💫┊space-snacktime",
+                    "type": "text"
+                },
+                {
+                    "id": 1457432934230397000,
+                    "name": "💫┊minecraft",
+                    "type": "text"
+                },
+                {
+                    "id": 1457524493428982000,
+                    "name": "💫┊minecraft-vc",
+                    "type": "voice"
+                },
+                {
+                    "id": 1454516077307625700,
+                    "name": "💫┊game-time-vc",
+                    "type": "voice"
+                },
+                {
+                    "id": 1453307267066892500,
+                    "name": "💫┊sleepover-vc",
+                    "type": "voice"
+                }
+            ],
+            "overwrites": [
+                {
+                    "id": 1453295393021493200,
+                    "deny": 0,
+                    "name": "@everyone",
+                    "allow": 68608,
+                    "is_role": true
+                }
+            ]
+        },
+        {
+            "id": 1454708373516718300,
+            "name": "🪴 The Greenhouse",
+            "channels": [
+                {
+                    "id": 1457823017962045400,
+                    "name": "💫┊roleplay-characters",
+                    "type": "text"   
+                },
+                {
+                    "id": 1454708375811264500,
+                    "name": "💫┊sprout-garden",
+                    "type": "text"
+                },
+                {
+                    "id": 1457822886533271600,
+                    "name": "💫┊solar-panels",
+                    "type": "text"
+                }
+            ],
+            "overwrites": [
+                {
+                    "id": 1453295393021493200,
+                    "deny": 0,
+                    "name": "@everyone",
+                    "allow": 68608,
+                    "is_role": true
+                },
+                {
+                    "id": 1454693275964412200,
+                    "deny": 0,
+                    "name": "Tupperbox",
+                    "allow": 8,
+                    "is_role": true
+                },
+                {
+                    "id": 1454292052442615800,
+                    "deny": 0,
+                    "name": "🤖 Ship Bots",
+                    "allow": 68608,
+                    "is_role": true
+                }
+            ]
+        },
+        {
+            "id": 1453307268169859000,
+            "name": "🌑 The Event Horizon",
+            "channels": [
+                {
+                    "id": 1453307269176365300,
+                    "name": "💫┊surveillance-logs",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 68608,
+                            "name": "@everyone",
+                            "allow": 0,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454292055814705200,
+                            "deny": 0,
+                            "name": "🛡️ Space Rangers",
+                            "allow": 68608,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454290390923350300,
+                            "deny": 0,
+                            "name": "🌟 Grand Astronomer",
+                            "allow": 68608,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454292052442615800,
+                            "deny": 0,
+                            "name": "🤖 Ship Bots",
+                            "allow": 68608,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1453307270036324400,
+                    "name": "💫┊astronomer-comms",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 68608,
+                            "name": "@everyone",
+                            "allow": 0,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454292055814705200,
+                            "deny": 0,
+                            "name": "🛡️ Space Rangers",
+                            "allow": 68608,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454290390923350300,
+                            "deny": 0,
+                            "name": "🌟 Grand Astronomer",
+                            "allow": 68608,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454292052442615800,
+                            "deny": 0,
+                            "name": "🤖 Ship Bots",
+                            "allow": 68608,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1453307271059607600,
+                    "name": "💫┊the-void",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 68608,
+                            "name": "@everyone",
+                            "allow": 0,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454292055814705200,
+                            "deny": 0,
+                            "name": "🛡️ Space Rangers",
+                            "allow": 68608,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454290390923350300,
+                            "deny": 0,
+                            "name": "🌟 Grand Astronomer",
+                            "allow": 68608,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454292052442615800,
+                            "deny": 0,
+                            "name": "🤖 Ship Bots",
+                            "allow": 68608,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1454288733108179000,
+                    "name": "💫┊ranger-briefings",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 68608,
+                            "name": "@everyone",
+                            "allow": 0,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454292055814705200,
+                            "deny": 0,
+                            "name": "🛡️ Space Rangers",
+                            "allow": 68608,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454290390923350300,
+                            "deny": 0,
+                            "name": "🌟 Grand Astronomer",
+                            "allow": 68608,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454292052442615800,
+                            "deny": 0,
+                            "name": "🤖 Ship Bots",
+                            "allow": 68608,
+                            "is_role": true
+                        }
+                    ]
+                },
+                {
+                    "id": 1454288739944759300,
+                    "name": "💫┊admin-bot-commands",
+                    "type": "text",
+                    "overwrites": [
+                        {
+                            "id": 1453295393021493200,
+                            "deny": 68608,
+                            "name": "@everyone",
+                            "allow": 0,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454292055814705200,
+                            "deny": 0,
+                            "name": "🛡️ Space Rangers",
+                            "allow": 68608,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454693275964412200,
+                            "deny": 0,
+                            "name": "Tupperbox",
+                            "allow": 68608,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454290390923350300,
+                            "deny": 0,
+                            "name": "🌟 Grand Astronomer",
+                            "allow": 68608,
+                            "is_role": true
+                        },
+                        {
+                            "id": 1454292052442615800,
+                            "deny": 0,
+                            "name": "🤖 Ship Bots",
+                            "allow": 68608,
+                            "is_role": true
+                        }
+                    ]
+                }
+            ],
+            "overwrites": [
+                {
+                    "id": 1453295393021493200,
+                    "deny": 68608,
+                    "name": "@everyone",
+                    "allow": 0,
+                    "is_role": true
+                },
+                {
+                    "id": 1454292055814705200,
+                    "deny": 0,
+                    "name": "🛡️ Space Rangers",
+                    "allow": 68608,
+                    "is_role": true
+                },
+                {
+                    "id": 1454693275964412200,
+                    "deny": 0,
+                    "name": "Tupperbox",
+                    "allow": 68608,
+                    "is_role": true
+                },
+                {
+                    "id": 1454290390923350300,
+                    "deny": 0,
+                    "name": "🌟 Grand Astronomer",
+                    "allow": 68608,
+                    "is_role": true
+                },
+                {
+                    "id": 1454292052442615800,
+                    "deny": 0,
+                    "name": "🤖 Ship Bots",
+                    "allow": 68608,
+                    "is_role": true
+                }
+            ]
+        }
+    ]
+}
