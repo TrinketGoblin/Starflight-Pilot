@@ -152,7 +152,7 @@ def migrate_db():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_plushies_registered ON user_stats(plushies_registered);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_facts_learned ON user_stats(facts_learned);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_stats_planets_discovered ON user_stats(planets_discovered);")
-            
+
     logger.info("Database migrations completed")
 
     init_default_missions(cur)
@@ -1738,8 +1738,8 @@ bot = StarflightBot()
 
 @bot.event
 async def on_ready():
-    init_db()
     migrate_db()
+    init_db()
     logger.info(f"🚀 Starflight Pilot online as {bot.user}")
     logger.info(f"📋 Registered commands: {[cmd.name for cmd in bot.tree.get_commands()]}")
 
