@@ -73,7 +73,7 @@ ANNOUNCEMENT_CONFIG = {
     },
     "footer": {
         "color": PALETTE['SLB'],
-        "description": "🚀 **pls invite ppl to join our discord server and help us grow!**\n\n[Click here](https://discord.google.com/4QzQYeuApB) to join!\n\n**Keep the ship Running**\n\n[Support the server](https://ko-fi.com/starlightfleetdiscord)\n\n[Commision me!](https://ko-fi.com/starlightfleetdiscord/commissions)",
+        "description": "[Invite People toJoin our Discord server](https://discord.gg/4QzQYeuApB), [Support the server](https://ko-fi.com/starlightfleetdiscord), [Commision me!](https://ko-fi.com/starlightfleetdiscord/commissions), [Site](https://site.starlightfleetdiscord.com/)",
         "image_url": "https://i.imgur.com/qhoc8Ub.png"
     }
 }
